@@ -36,6 +36,10 @@ init_32bit:
 
 [bits 32]
 start_32bit:			;start of the 32bit mode instructions
+	
+	mov ebx, BOOT_MSG_32BIT ;this is what will be printed on the screen
+	call vga_print 		;we call the print function
+	
 	hlt 			;we stop the CPU
 	
 
@@ -64,6 +68,38 @@ done:
 	ret 			;we return to the calling address
 	
 	;; ---------------------16 bit mode print function------------------------- ;;
+
+	;; ---------------------32 bit mode print function------------------------- ;;
+
+[bits 32]
+vga_print:
+
+	;; defining constants to make things easier
+	VGA_MEMORY_ADDRESS equ 0xb8000
+	WHITE_ON_BLACK equ 0x0f
+
+vga_print_start:
+	pusha 				;saving the registers
+	mov edx, VGA_MEMORY_ADDRESS 	;setting edx to where we want to print
+
+vga_print_loop:
+	mov al, [ebx] 		;[ebx] is the address of the current character
+	mov ah, WHITE_ON_BLACK 	;setting the color
+
+	cmp al, 0 		;checking if the current character is a NULL byte
+	je vga_print_done 	;if yes, we finish
+
+	mov [edx], ax 		;we store the character and the color in the vga memory
+	add ebx, 1 		;we move to the next character
+	add edx, 2 		;we move to the next position on screen (current + 2)
+
+	jmp vga_print_loop 	;we loop until we reach the end
+
+vga_print_done:
+	popa 			;we restore the registers
+	ret 			;we return to the calling code
+	
+	;; ---------------------32 bit mode print function------------------------- ;;
 	
 	;; -------------------------Setting up the GDT----------------------------- ;;
 
@@ -103,7 +139,8 @@ gdt_descriptor:
 	;; -------------------------Setting up the GDT----------------------------- ;;
 
 
-BOOT_MSG_16BIT db "starting in 16bit mode", 0
+	BOOT_MSG_16BIT db "starting in 16bit mode", 0
+	BOOT_MSG_32BIT db "initialized 32bit mode", 0
 
-times 510-($-$$) db 0
-dw 0xaa55
+times 510-($-$$) db 0 		;filling the first sector up to the magic bytes
+dw 0xaa55 			;the magic bytes to inform the BIOS this disk is bootable
