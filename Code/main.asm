@@ -36,8 +36,12 @@ init_32bit:
 
 [bits 32]
 start_32bit:			;start of the 32bit mode instructions
+
+	call vga_clear_screen 	;clearing the screen
 	
 	mov ebx, BOOT_MSG_32BIT ;this is what will be printed on the screen
+	mov al, 0x2 		;al should contain the line number
+	mov ecx, 0x1		;ecx should contain the column number
 	call vga_print 		;we call the print function
 	
 	hlt 			;we stop the CPU
@@ -71,16 +75,31 @@ done:
 
 	;; ---------------------32 bit mode print function------------------------- ;;
 
+	;; ebx needs to be pointing to the string to display
+	;; al needs to hold the line number to start
+	;; ecx needs to hold the column number to start
+
 [bits 32]
 vga_print:
 
 	;; defining constants to make things easier
 	VGA_MEMORY_ADDRESS equ 0xb8000
+	VGA_MEMORY_END equ 0xb8fa0	 ;0xb8000 + 80*25*2
 	WHITE_ON_BLACK equ 0x0f
 
 vga_print_start:
 	pusha 				;saving the registers
-	mov edx, VGA_MEMORY_ADDRESS 	;setting edx to where we want to print
+
+	;; calculating the offset
+	;; line offset
+	mov dx, 0xa0 		;preparing the multiplication to add the right offset (80*2 per line)
+	mul dx 			;eax = eax*dx = al*dx
+
+	shl ecx, 1		;multiplying ecx by 2 because each VGA slot is 2 bytes long
+	add eax, ecx		;adding this to the current offset
+	
+	mov edx, VGA_MEMORY_ADDRESS 	;setting edx to the base of the VGA space
+	add edx, eax			;adding our offset
 
 vga_print_loop:
 	mov al, [ebx] 		;[ebx] is the address of the current character
@@ -100,6 +119,32 @@ vga_print_done:
 	ret 			;we return to the calling code
 	
 	;; ---------------------32 bit mode print function------------------------- ;;
+
+	;; ----------------------32 bit mode clear screen-------------------------- ;;
+
+[bits 32]
+vga_clear_screen:
+	pusha 				;we save the registers
+	mov edx, VGA_MEMORY_ADDRESS	;setting edx to the first byte of the VGA memory
+
+	mov al, 0x0 		;NULL character
+	mov ah, WHITE_ON_BLACK 	;setting the color
+
+vga_clear_loop:
+
+	mov [edx], ax 		;clearing the character pointed by edx
+	add edx, 2 		;moving to the next position on screen
+	
+	cmp edx, VGA_MEMORY_END	;checking if we cleared the whole screen
+	je vga_clear_done 	;if yes, quitting
+
+	jmp vga_clear_loop 	;if no, looping
+
+vga_clear_done:
+	popa 			;restoring the registers
+	ret			;returning
+	
+	;; ----------------------32 bit mode clear screen-------------------------- ;;
 	
 	;; -------------------------Setting up the GDT----------------------------- ;;
 
