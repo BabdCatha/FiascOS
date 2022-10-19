@@ -18,7 +18,7 @@ switch_to_32bit:
 	or eax, 0x1
 	mov cr0, eax
 
-	jmp CODE_SEG:init_32bit
+	jmp CODE_SEG:init_32bit ;because we are still in 16bit mode
 
 [bits 32]
 init_32bit:
@@ -40,8 +40,8 @@ start_32bit:			;start of the 32bit mode instructions
 	call vga_clear_screen 	;clearing the screen
 	
 	mov ebx, BOOT_MSG_32BIT ;this is what will be printed on the screen
-	mov al, 0x2 		;al should contain the line number
-	mov ecx, 0x1		;ecx should contain the column number
+	mov al, 0x0 		;al should contain the line number
+	mov ecx, 0x0		;ecx should contain the column number
 	call vga_print 		;we call the print function
 	
 	hlt 			;we stop the CPU
@@ -101,12 +101,18 @@ vga_print_start:
 	mov edx, VGA_MEMORY_ADDRESS 	;setting edx to the base of the VGA space
 	add edx, eax			;adding our offset
 
+	cmp edx, VGA_MEMORY_END 	;checking that we still are in VGA MEMORY
+	jge vga_print_done 		;if not, we exit
+
 vga_print_loop:
 	mov al, [ebx] 		;[ebx] is the address of the current character
 	mov ah, WHITE_ON_BLACK 	;setting the color
 
 	cmp al, 0 		;checking if the current character is a NULL byte
 	je vga_print_done 	;if yes, we finish
+
+	cmp edx, VGA_MEMORY_END 	;checking that we still are in VGA MEMORY
+	jge vga_print_done 		;if not, we exit
 
 	mov [edx], ax 		;we store the character and the color in the vga memory
 	add ebx, 1 		;we move to the next character
@@ -136,7 +142,7 @@ vga_clear_loop:
 	add edx, 2 		;moving to the next position on screen
 	
 	cmp edx, VGA_MEMORY_END	;checking if we cleared the whole screen
-	je vga_clear_done 	;if yes, quitting
+	jge vga_clear_done 	;if yes, quitting
 
 	jmp vga_clear_loop 	;if no, looping
 
