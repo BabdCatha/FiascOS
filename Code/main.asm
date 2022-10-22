@@ -40,8 +40,18 @@ start_32bit:			;start of the 32bit mode instructions
 	call vga_clear_screen 	;clearing the screen
 	
 	mov ebx, BOOT_MSG_32BIT ;this is what will be printed on the screen
-	mov al, 0x0 		;al should contain the line number
+	mov al, 5d 		;al should contain the line number
 	mov ecx, 0x0		;ecx should contain the column number
+	call vga_print 		;we call the print function
+
+	mov ebx, BOOT_MSG_32BIT ;this is what will be printed on the screen
+	mov al, 25d 		;al should contain the line number
+	mov ecx, 0x0		;ecx should contain the column number
+	call vga_print 		;we call the print function
+
+	mov ebx, BOOT_MSG_32BIT ;this is what will be printed on the screen
+	mov al, 25d 		;al should contain the line number
+	mov ecx, 0x5		;ecx should contain the column number
 	call vga_print 		;we call the print function
 	
 	hlt 			;we stop the CPU
@@ -86,9 +96,17 @@ vga_print:
 	VGA_MEMORY_ADDRESS equ 0xb8000
 	VGA_MEMORY_END equ 0xb8fa0	 ;0xb8000 + 80*25*2
 	WHITE_ON_BLACK equ 0x0f
+	
+	pusha 				;saving the registers
 
 vga_print_start:
-	pusha 				;saving the registers
+
+	cmp al, 24d 		;if the line is greater than the screen size
+	jg vga_print_scroll 	;we scroll the screen
+	;; This is executed the as many times as necessary to make al less than 23
+	;; 23 being the last line of the screen in VGA text mode
+	
+vga_print_offset_calc:
 
 	;; calculating the offset
 	;; line offset
@@ -123,10 +141,46 @@ vga_print_loop:
 vga_print_done:
 	popa 			;we restore the registers
 	ret 			;we return to the calling code
+
+vga_print_scroll:
+	push ebx 		;ebx will hold the address we are currently copying
+	push ecx 		;ecx will hold the 32bits we are copying at each step
+	;; We will start at line 1, column 0, and move forward from there. Each time
+	;; copying the current 4 bytes to the line before;
+
+	mov ebx, VGA_MEMORY_ADDRESS + 0xa0 ;address of line 1, col0
+
+vga_print_scroll_loop:	
+	mov ecx, [ebx]			   ;moving the data at address [ebx] to ecx
+	mov [ebx - 0xa0], ecx		   ;moving the data from ecx to the memory
+	add ebx, 0x4			   ;we move to the next the characters
+
+	cmp ebx, VGA_MEMORY_END  ;if we haven't copied the whole screen
+	jb vga_print_scroll_loop ;we loop back to continue
+
+	;; at this point, the screen has been copied one line higher
+	;; we need to clear the last line
+
+	sub ebx, 0xa0 		;we come back to the begining of the last line
+	mov ecx, 0 		;ecx will hold the value used to clear the screen
+	
+vga_print_last_line_clear_loop:
+	mov [ebx], ecx 		;we fill it with zeroes
+	add ebx, 0x4 		;moving to the next two characters
+
+	cmp ebx, VGA_MEMORY_END  		;if we haven't fully cleaned the last line
+	jb vga_print_last_line_clear_loop 	;we loop back to continue
+	
+	sub al, 1 		;we remove 1 to the line number we want to print to
+	pop ecx 		;we restore the registers
+	pop ebx
+
+	jmp vga_print_start
+
 	
 	;; ---------------------32 bit mode print function------------------------- ;;
 
-	;; ----------------------32 bit mode clear screen-------------------------- ;;
+	;; ---------------------32 bit mode scroll function------------------------ ;;
 
 [bits 32]
 vga_clear_screen:
