@@ -1,3 +1,8 @@
 
 Code/main.asm~
 *.ld~
+*.asm~
+*.o
+Build/main.bin
+Build/interruptions.bin
+Build/bootsect.bin
