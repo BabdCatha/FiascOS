@@ -1,13 +1,13 @@
-[bits 32]
+[bits 32]	
 
 global _start
 _start:
 
 idt_setup:
 
-	;; ;; lidt [idt_descriptor]
+	lidt [idt_descriptor]
 
-	;; int 0x0
+	int 0x0
 	
 	call vga_clear_screen	;clearing the screen
 	
@@ -17,28 +17,23 @@ idt_setup:
 	mov ecx, 0x0		;ecx should contain the column number
 	call vga_print		;we call the print function
 
-	mov ecx, 0xdeadbeef
-	jmp $
-
-	call unhandled_exception_handler
-
 	jmp $
 
 idt_start:
 	;; interrupt #0 ()
-	dw (unhandled_exception_handler - idt_setup & 0xffff)	;the low bytes of the handler address
-	dw 0b0000000000001000					;trap gate in ring 0
+	dw (unhandled_exception_handler - _start + 0x9000 & 0xffff)	;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
 	db 0x00							;unused
-	db 0b10001111						;segment selector
-	dw (unhandled_exception_handler - idt_setup >> 16)	;the high bytes of the handler address
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - _start + 0x9000 >> 16)		;the high bytes of the handler address
+
+times 1020 dw 0
+	
 idt_end:
 
 idt_descriptor:
 	dw idt_end - idt_start - 1 ;setting the size of the idt
 	dd idt_start		   ;setting up the start of the idt
-	
-	;; the error message when an unhandled exception occurs
-	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 	
 unhandled_exception_handler:
 	
@@ -49,6 +44,9 @@ unhandled_exception_handler:
 	call vga_print
 
 	jmp $ 			;infinite loop
+
+	;; the error message when an unhandled exception occurs
+	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------32 bit mode print function------------------------- ;;
 

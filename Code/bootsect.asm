@@ -9,7 +9,7 @@ _ZERO:				;used to convert relocatables to absolute numbers
 	;; loading code from the second sector of the disk
 	;; dl is set to the boot disk by the BIOS when booting, and hasn't been modified yet
 	mov ah, 0x02 		;setting a read operation
-	mov dh, 0x01 		;reading 512 bytes (1 sector)
+	mov dh, 0x05 		;reading 2560 bytes (5 sectors)
 	mov cl, 0x02 		;the first sector after the boot sector
 	mov ch, 0x00 		;cylinder 0
 
@@ -129,7 +129,7 @@ done:
 	;; -------------------------Setting up the GDT----------------------------- ;;
 
 gdt_start:
-	;; the GDT always starts with a NULL byte
+	;; the GDT always starts with a NULL entry
 	dd 0x0
 	dd 0x0
 
