@@ -1,4 +1,7 @@
-[bits 32]	
+[bits 32]
+
+	;; The kernel code should be loaded at address 0x9000
+KERNEL_START equ _start - 0x9000 ;to convert relocatables to absolute adresses
 
 global _start
 _start:
@@ -6,53 +9,113 @@ _start:
 idt_setup:
 
 	lidt [idt_descriptor]
-
-	int 0x0
 	
 	call vga_clear_screen	;clearing the screen
 	
 	mov ebx, BOOT_MSG_32BIT	;this is what will be printed on the screen
 	
 	mov al, 0x0 		;al should contain the line number
-	mov ecx, 0x0		;ecx should contain the column number
+	mov ch, 0x0f 		;dl should contain the color - white on black
+	mov cl, 0x0		;ecx should contain the column number
 	call vga_print		;we call the print function
 
+	int 0x2 		;Test interrupt
+	
 	jmp $
 
 idt_start:
-	;; interrupt #0 ()
-	dw (unhandled_exception_handler - _start + 0x9000 & 0xffff)	;the low bytes of the handler address
+	;; pm exception #0 - Divide by zero error (fault) 
+	dw (divide_by_zero_handler - KERNEL_START & 0xffff)	;the low bytes of the handler address
 	dw 0b0000000000001000					;segment selector
 	db 0x00							;unused
 	db 0x8E							;trap gate in ring 0
-	dw (unhandled_exception_handler - _start + 0x9000 >> 16)		;the high bytes of the handler address
+	dw (divide_by_zero_handler - KERNEL_START >> 16)	;the high bytes of the handler address
 
-times 1020 dw 0
+	;; pm exception #1 - Debug (fault) 
+	dw (debug_handler - KERNEL_START & 0xffff)		;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (debug_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #2 - Non Maskable interrupt (interrupt) 
+	dw (NMI_handler - KERNEL_START & 0xffff)		;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (NMI_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+times 1016 dw 0
 	
 idt_end:
 
 idt_descriptor:
 	dw idt_end - idt_start - 1 ;setting the size of the idt
 	dd idt_start		   ;setting up the start of the idt
+
+	;; --------------------------Start of handlers----------------------------- ;;
+	;; Each interrupt vector needs its own handler to find what happened
+
+divide_by_zero_handler:
+	;; We simply print a message showing the user what happened
+	mov ebx, DIVIDE_BY_ZERO	;we print an error message
+	mov ch, 0x04		;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
+
+debug_handler:
+	;; We simply print a message showing the user what happened
+	mov ebx, DEBUG	;we print an error message
+	mov ch, 0x04		;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
+
+NMI_handler:
+	;; We simply print a message showing the user what happened
+	mov ebx, NMI	;we print an error message
+	mov ch, 0x04		;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
 	
 unhandled_exception_handler:
 	
 	mov ebx, UNHANDLED_EXCEPTION ;we print an error message
+	mov ch, 0x04		     ;red on black
 	mov al, 0x0
-	mov ecx, 0x0
+	mov cl, 0x0
 	
 	call vga_print
 
-	jmp $ 			;infinite loop
+	jmp $ 	;We stay here
 
+	;; ---------------------------Error messages------------------------------- ;;
+	
 	;; the error message when an unhandled exception occurs
+	DIVIDE_BY_ZERO db "A division by 0 occured", 0
+	DEBUG db "Debug exception reached", 0
+	NMI db "Non maskable interrupt occured", 0
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
+
+	;; ---------------------------End of handlers------------------------------ ;;
 
 	;; ---------------------32 bit mode print function------------------------- ;;
 
 	;; ebx needs to be pointing to the string to display
 	;; al needs to hold the line number to start
-	;; ecx needs to hold the column number to start
+	;; dl should contain the color to print
+	;; cl needs to hold the column number to start
 
 [bits 32]
 vga_print:
@@ -62,7 +125,6 @@ vga_print:
 	;; defining constants to make things easier
 	VGA_MEMORY_ADDRESS equ 0xb8000
 	VGA_MEMORY_END equ 0xb8fa0	 ;0xb8000 + 80*25*2
-	WHITE_ON_BLACK equ 0x0f
 
 vga_print_start:
 
@@ -75,8 +137,12 @@ vga_print_offset_calc:
 
 	;; calculating the offset
 	;; line offset
+	
 	mov dx, 0xa0 		;preparing the multiplication to add the right offset (80*2 per line)
 	mul dx 			;eax = eax*dx = al*dx
+
+	push ecx 		;saving the color data
+	mov ch, 0x00 		;setting ecx so that ecx = cl
 
 	shl ecx, 1		;multiplying ecx by 2 because each VGA slot is 2 bytes long
 	add eax, ecx		;adding this to the current offset
@@ -88,9 +154,11 @@ vga_print_offset_calc:
 	
 	jge vga_print_done 		;if not, we exit
 
+	pop ecx
+	mov ah, ch 		;we restore the color
+
 vga_print_loop:
 	mov al, [ebx] 		;[ebx] is the address of the current character
-	mov ah, WHITE_ON_BLACK 	;setting the color
 
 	cmp al, 0 		;checking if the current character is a NULL byte
 	je vga_print_done 	;if yes, we finish
@@ -155,7 +223,7 @@ vga_clear_screen:
 	mov edx, VGA_MEMORY_ADDRESS	;setting edx to the first byte of the VGA memory
 
 	mov al, 0x0 		;NULL character
-	mov ah, WHITE_ON_BLACK 	;setting the color
+	mov ah, 0x0f	 	;setting the color
 
 vga_clear_loop:
 

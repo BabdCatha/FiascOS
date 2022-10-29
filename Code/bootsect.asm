@@ -1,4 +1,6 @@
-_ZERO:				;used to convert relocatables to absolute numbers
+global _ZERO			;used to convert relocatables to absolute numbers
+_ZERO:
+	
 [org 0x7c00]
 	mov bp, 0x9000 		;setting the stack base pointer
 	mov sp, bp 		;the stack is currently empty, so sp = bp
