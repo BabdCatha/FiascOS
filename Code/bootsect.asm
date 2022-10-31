@@ -11,7 +11,7 @@ _ZERO:
 	;; loading code from the second sector of the disk
 	;; dl is set to the boot disk by the BIOS when booting, and hasn't been modified yet
 	mov ah, 0x02 		;setting a read operation
-	mov dh, 0x05 		;reading 2560 bytes (5 sectors)
+	mov dh, 0x06 		;reading 3072 bytes (6 sectors)
 	mov cl, 0x02 		;the first sector after the boot sector
 	mov ch, 0x00 		;cylinder 0
 

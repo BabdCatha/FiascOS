@@ -19,7 +19,7 @@ idt_setup:
 	mov cl, 0x0		;ecx should contain the column number
 	call vga_print		;we call the print function
 
-	int 0x2 		;Test interrupt
+	int 0x7 		;Test interrupt
 	
 	jmp $
 
@@ -38,14 +38,50 @@ idt_start:
 	db 0x8E							;trap gate in ring 0
 	dw (debug_handler - KERNEL_START >> 16)			;the high bytes of the handler address
 
-	;; pm exception #2 - Non Maskable interrupt (interrupt) 
+	;; pm exception #2 - Non Maskable interrupt (interrupt) --TODO
 	dw (NMI_handler - KERNEL_START & 0xffff)		;the low bytes of the handler address
 	dw 0b0000000000001000					;segment selector
 	db 0x00							;unused
 	db 0x8E							;trap gate in ring 0
 	dw (NMI_handler - KERNEL_START >> 16)			;the high bytes of the handler address
 
-times 1016 dw 0
+	;; pm exception #3 - Breakpoint (trap)
+	dw (Breakpoint_handler - KERNEL_START & 0xffff)		;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (Breakpoint_handler - KERNEL_START >> 16)		;the high bytes of the handler address
+
+	;; pm exception #4 - Overflow (trap)
+	dw (Overflow_handler - KERNEL_START & 0xffff)		;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (Overflow_handler - KERNEL_START >> 16)		;the high bytes of the handler address
+
+	;; pm exception #5 - Bound range exceeded (fault)
+	dw (OOB_handler - KERNEL_START & 0xffff)		;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (OOB_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #6 - Invalid Opcode (fault)
+	dw (UD_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (UD_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #7 - Device not available (fault)
+	;; Attempted an FPU operation but no FPU exists on the machine
+	dw (NM_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (NM_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+times 996 dw 0
 	
 idt_end:
 
@@ -88,6 +124,61 @@ NMI_handler:
 	call vga_print
 
 	iret 			;non fatal exception
+
+Breakpoint_handler:
+	;; We simply print a message showing the user what happened
+	mov ebx, BREAKPOINT_REACHED	;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	jmp $ 			;we stop the program
+
+Overflow_handler:
+	;; We simply print a message showing the user what happened
+	mov ebx, OVERFLOW		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
+
+OOB_handler:
+	;; We simply print a message showing the user what happened
+	mov ebx, OUT_OF_BOUNDS		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
+
+UD_handler:
+	;; We simply print a message showing the user what happened
+	mov ebx, INVALID_OPCODE		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
+
+NM_handler:
+	;; We simply print a message showing the user what happened
+	mov ebx, DEVICE_NOT_AVAILABLE	;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
 	
 unhandled_exception_handler:
 	
@@ -103,9 +194,14 @@ unhandled_exception_handler:
 	;; ---------------------------Error messages------------------------------- ;;
 	
 	;; the error message when an unhandled exception occurs
-	DIVIDE_BY_ZERO db "A division by 0 occured", 0
-	DEBUG db "Debug exception reached", 0
-	NMI db "Non maskable interrupt occured", 0
+	DIVIDE_BY_ZERO db "A division by 0 occured", 0 				;0x0
+	DEBUG db "Debug exception reached", 0	       				;0x1
+	NMI db "Non maskable interrupt occured", 0     				;0x2
+	BREAKPOINT_REACHED db "Breakpoint reached", 0 				;0x3
+	OVERFLOW db "An overflow occured before calling INTO", 0 		;0x4
+	OUT_OF_BOUNDS db "BOUND noticed out of range array indice", 0 		;0x5
+	INVALID_OPCODE db "Invalid Opcode encountered", 0 			;0x6
+	DEVICE_NOT_AVAILABLE db "FPU is missing", 0 				;0x7
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------------End of handlers------------------------------ ;;
