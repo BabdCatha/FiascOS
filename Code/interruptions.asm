@@ -19,7 +19,7 @@ idt_setup:
 	mov cl, 0x0		;ecx should contain the column number
 	call vga_print		;we call the print function
 
-	int 0x7 		;Test interrupt
+	int 0x9 		;Test interrupt
 	
 	jmp $
 
@@ -81,7 +81,34 @@ idt_start:
 	db 0x8E							;trap gate in ring 0
 	dw (NM_handler - KERNEL_START >> 16)			;the high bytes of the handler address
 
-times 996 dw 0
+	;; pm exception #8 - Double fault (abort)
+	;; A double fault occured, the machine is unrecoverable and is to be rebooted.
+	;; This can happen because of an unhandled exception, or when two exception
+	;; occur at the same time.
+	dw (DF_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (DF_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #9 - Coprocessor Segment Overrun (fault)
+	;; This is legacy, canno occur on modern hardware because FPU is integrated
+	dw (CSO_handler - KERNEL_START & 0xffff)		;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (CSO_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #A - Invalid TSS (fault)
+	;; Occurs when using an invalid segment selector
+	;; An error code is pushed to the stack, containing the invalid selector index
+	dw (TS_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (TS_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+times 980 dw 0
 	
 idt_end:
 
@@ -92,7 +119,7 @@ idt_descriptor:
 	;; --------------------------Start of handlers----------------------------- ;;
 	;; Each interrupt vector needs its own handler to find what happened
 
-divide_by_zero_handler:
+divide_by_zero_handler: 	;Int 0x0
 	;; We simply print a message showing the user what happened
 	mov ebx, DIVIDE_BY_ZERO	;we print an error message
 	mov ch, 0x04		;red on black
@@ -103,7 +130,7 @@ divide_by_zero_handler:
 
 	iret 			;non fatal exception
 
-debug_handler:
+debug_handler: 			;Int 0x1
 	;; We simply print a message showing the user what happened
 	mov ebx, DEBUG	;we print an error message
 	mov ch, 0x04		;red on black
@@ -114,7 +141,7 @@ debug_handler:
 
 	iret 			;non fatal exception
 
-NMI_handler:
+NMI_handler: 			;Int 0x2
 	;; We simply print a message showing the user what happened
 	mov ebx, NMI	;we print an error message
 	mov ch, 0x04		;red on black
@@ -125,7 +152,7 @@ NMI_handler:
 
 	iret 			;non fatal exception
 
-Breakpoint_handler:
+Breakpoint_handler: 		;Int 0x3
 	;; We simply print a message showing the user what happened
 	mov ebx, BREAKPOINT_REACHED	;we print an error message
 	mov ch, 0x04			;red on black
@@ -136,7 +163,7 @@ Breakpoint_handler:
 
 	jmp $ 			;we stop the program
 
-Overflow_handler:
+Overflow_handler: 		;Int 0x4
 	;; We simply print a message showing the user what happened
 	mov ebx, OVERFLOW		;we print an error message
 	mov ch, 0x04			;red on black
@@ -147,7 +174,7 @@ Overflow_handler:
 
 	iret 			;non fatal exception
 
-OOB_handler:
+OOB_handler: 			;Int 0x5
 	;; We simply print a message showing the user what happened
 	mov ebx, OUT_OF_BOUNDS		;we print an error message
 	mov ch, 0x04			;red on black
@@ -158,7 +185,7 @@ OOB_handler:
 
 	iret 			;non fatal exception
 
-UD_handler:
+UD_handler: 			;Int 0x6
 	;; We simply print a message showing the user what happened
 	mov ebx, INVALID_OPCODE		;we print an error message
 	mov ch, 0x04			;red on black
@@ -169,7 +196,7 @@ UD_handler:
 
 	iret 			;non fatal exception
 
-NM_handler:
+NM_handler: 			;Int 0x7
 	;; We simply print a message showing the user what happened
 	mov ebx, DEVICE_NOT_AVAILABLE	;we print an error message
 	mov ch, 0x04			;red on black
@@ -177,6 +204,45 @@ NM_handler:
 	mov cl, 0x0
 	
 	call vga_print
+
+	iret 			;non fatal exception
+
+DF_handler:			;Int 0x8
+	;; We simply print a message showing the user what happened
+	mov ebx, DOUBLE_FAULT		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	jmp $ 			;fatal exception
+
+CSO_handler:  			;Int 0x9
+	;; We simply print a message showing the user what happened
+	mov ebx, COPROCESSOR_OVERRUN	;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	jmp $ 			;non fatal exception, but we stay here because it should never
+	;; happen. This means something is terribly wrong
+
+TS_handler:  			;Int 0xA
+	
+	;; We print a message showing the user what happened
+	mov ebx, INVALID_TSS		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	jmp $
+
+	pop dword [error_processing_area] ;TODO: print it to the user
 
 	iret 			;non fatal exception
 	
@@ -202,6 +268,9 @@ unhandled_exception_handler:
 	OUT_OF_BOUNDS db "BOUND noticed out of range array indice", 0 		;0x5
 	INVALID_OPCODE db "Invalid Opcode encountered", 0 			;0x6
 	DEVICE_NOT_AVAILABLE db "FPU is missing", 0 				;0x7
+	DOUBLE_FAULT db "A Double Fault occured", 0 				;0x8
+	COPROCESSOR_OVERRUN db "Coprocessor Segment Overrun", 0 		;0x9 - Legacy
+	INVALID_TSS db "Invalid Segment Selector used", 0 			;0xA
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------------End of handlers------------------------------ ;;
@@ -337,3 +406,9 @@ vga_clear_done:
 	
 	;; ----------------------32 bit mode clear screen-------------------------- ;;
 	BOOT_MSG_32BIT db "initialized 32bit mode", 0
+
+	;; ----------------A memory area to process error codes-------------------- ;;
+	;; 256 bytes long
+	
+error_processing_area:
+times 256 db 0x00
