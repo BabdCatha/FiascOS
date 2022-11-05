@@ -1,6 +1,6 @@
 [bits 32]
 
-	;; The kernel code should be loaded at address 0x9000
+	;; The interrupt code should be loaded at address 0x9000
 KERNEL_START equ _start - 0x9000 ;to convert relocatables to absolute adresses
 
 global _start
@@ -19,7 +19,7 @@ idt_setup:
 	mov cl, 0x0		;ecx should contain the column number
 	call vga_print		;we call the print function
 
-	int 0x9 		;Test interrupt
+	int 0xE 		;Test interrupt
 	
 	jmp $
 
@@ -108,7 +108,56 @@ idt_start:
 	db 0x8E							;trap gate in ring 0
 	dw (TS_handler - KERNEL_START >> 16)			;the high bytes of the handler address
 
-times 980 dw 0
+	;; pm exception #B - Segment not present (fault)
+	;; Occurs when trying to use a segment with a present bit set to 0
+	;; An error code is pushed to the stack, containing the invalid selector index
+	dw (NP_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (NP_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #C - Stack-Segment Fault (fault)
+	;; Occurs when :
+	;; - Loading a stack-segment referencing a non-present segment
+	;; - PUSH or POP operations using ESP or EBP with a non-canonical stack address
+	;; - The stack-limit check fails
+	;; An error code is pushed to the stack, containing the invalid selector index if it exists
+	dw (SS_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (SS_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #D - General Protection Fault (fault)
+	;; Can occur for many reasons, the most common being :
+	;; - A Segment error (privilege, type, etc)
+	;; - Executing a privileged instruction when not authorized
+	;; - Using invalid registers combinaisons (eg CR0 with PE=0 and PG=1)
+	;; - Referencing or accessing a NULL-descriptor
+	;;
+	;; EIP contains the address of the faulty instruction
+	;; An error code is pushed to the stack, containing the invalid selector index if it exists
+	dw (GP_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (GP_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #E - Page Fault (fault)
+	;; Can occur when :
+	;; - A page directory of table is not present in memory
+	;; - An attempt to load the instruction TLB for a non-executable page is made
+	;; - A protection check failed
+	;; - A reserved bit is set to 1
+	;; An error code is pushed to the stack, containing the invalid selector index if it exists
+	dw (PF_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (PF_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+times 968 dw 0
 	
 idt_end:
 
@@ -240,9 +289,57 @@ TS_handler:  			;Int 0xA
 	
 	call vga_print
 
-	jmp $
+	pop dword [error_processing_area] ;TODO: print it to the user
+
+	iret 			;non fatal exception
+
+NP_handler:  			;Int 0xB
+	
+	;; We print a message showing the user what happened
+	mov ebx, SEGMENT_MISSING	;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
 
 	pop dword [error_processing_area] ;TODO: print it to the user
+
+	iret 			;non fatal exception
+
+SS_handler:  			;Int 0xC
+	
+	;; We print a message showing the user what happened
+	mov ebx, STACK_SEGMENT		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	pop dword [error_processing_area] ;TODO: print it to the user
+
+	iret 			;non fatal exception
+
+GP_handler:  			;Int 0xD
+	
+	;; We print a message showing the user what happened
+	mov ebx, GENERAL_PROTECTION	;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	pop dword [error_processing_area] ;TODO: print it to the user; print EIP
+
+	iret 			;non fatal exception
+
+PF_handler:  			;Int 0xE
+	
+	;; Not implemented yet, as paging is not currently implemented on this system
+
+	pop dword [error_processing_area]
 
 	iret 			;non fatal exception
 	
@@ -271,6 +368,10 @@ unhandled_exception_handler:
 	DOUBLE_FAULT db "A Double Fault occured", 0 				;0x8
 	COPROCESSOR_OVERRUN db "Coprocessor Segment Overrun", 0 		;0x9 - Legacy
 	INVALID_TSS db "Invalid Segment Selector used", 0 			;0xA
+	SEGMENT_MISSING db "Segment had present bit set to 0", 0 		;0xB
+	STACK_SEGMENT db "A Stack-Segment fault occured", 0 			;0xC
+	GENERAL_PROTECTION db "A General Protection Fault occured", 0 		;0xD
+	;; A page fault is normal, the user doesn't need to be informed		;0xE
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------------End of handlers------------------------------ ;;
