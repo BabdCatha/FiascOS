@@ -19,7 +19,7 @@ idt_setup:
 	mov cl, 0x0		;ecx should contain the column number
 	call vga_print		;we call the print function
 
-	int 0xE 		;Test interrupt
+	int 0x11 		;Test interrupt
 	
 	jmp $
 
@@ -157,7 +157,33 @@ idt_start:
 	db 0x8E							;trap gate in ring 0
 	dw (PF_handler - KERNEL_START >> 16)			;the high bytes of the handler address
 
-times 968 dw 0
+	;; pm exception #F - Reserved
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #10 - x87 Floating-Point Exception (fault)
+	;; Can happen when using the FWAIT or WAIT instruction and :
+	;; - CR0.NE is set (Numeric Error)
+	;; - An unmasked x87 floating-point exception is pending
+	dw (MF_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (MF_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #11 - Alignment Check failure (fault)
+	;; Occurs when alignment checking is enabled (only possible in CPL3) and an unaligned memory
+	;; reference is performed
+	dw (AC_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (AC_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+	
+times 956 dw 0
 	
 idt_end:
 
@@ -342,6 +368,33 @@ PF_handler:  			;Int 0xE
 	pop dword [error_processing_area]
 
 	iret 			;non fatal exception
+
+MF_handler:			;Int 0x10
+	;; We simply print a message showing the user what happened
+	mov ebx, X87_EXCEPTION		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
+
+AC_handler:			;Int 0x11
+
+	add esp, 4		;The error code is always 0, so we don't need to check it
+	;; add esp, 4 is moving the stack pointer higher, ignoring what was previously at
+	;; the top
+	
+	;; We simply print a message showing the user what happened
+	mov ebx, X87_EXCEPTION		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non fatal exception
 	
 unhandled_exception_handler:
 	
@@ -357,21 +410,24 @@ unhandled_exception_handler:
 	;; ---------------------------Error messages------------------------------- ;;
 	
 	;; the error message when an unhandled exception occurs
-	DIVIDE_BY_ZERO db "A division by 0 occured", 0 				;0x0
-	DEBUG db "Debug exception reached", 0	       				;0x1
-	NMI db "Non maskable interrupt occured", 0     				;0x2
-	BREAKPOINT_REACHED db "Breakpoint reached", 0 				;0x3
-	OVERFLOW db "An overflow occured before calling INTO", 0 		;0x4
-	OUT_OF_BOUNDS db "BOUND noticed out of range array indice", 0 		;0x5
-	INVALID_OPCODE db "Invalid Opcode encountered", 0 			;0x6
-	DEVICE_NOT_AVAILABLE db "FPU is missing", 0 				;0x7
-	DOUBLE_FAULT db "A Double Fault occured", 0 				;0x8
-	COPROCESSOR_OVERRUN db "Coprocessor Segment Overrun", 0 		;0x9 - Legacy
-	INVALID_TSS db "Invalid Segment Selector used", 0 			;0xA
-	SEGMENT_MISSING db "Segment had present bit set to 0", 0 		;0xB
-	STACK_SEGMENT db "A Stack-Segment fault occured", 0 			;0xC
-	GENERAL_PROTECTION db "A General Protection Fault occured", 0 		;0xD
-	;; A page fault is normal, the user doesn't need to be informed		;0xE
+	DIVIDE_BY_ZERO db "A division by 0 occured", 0 				;0x00
+	DEBUG db "Debug exception reached", 0	       				;0x01
+	NMI db "Non maskable interrupt occured", 0     				;0x02
+	BREAKPOINT_REACHED db "Breakpoint reached", 0 				;0x03
+	OVERFLOW db "An overflow occured before calling INTO", 0 		;0x04
+	OUT_OF_BOUNDS db "BOUND noticed out of range array indice", 0 		;0x05
+	INVALID_OPCODE db "Invalid Opcode encountered", 0 			;0x06
+	DEVICE_NOT_AVAILABLE db "FPU is missing", 0 				;0x07
+	DOUBLE_FAULT db "A Double Fault occured", 0 				;0x08
+	COPROCESSOR_OVERRUN db "Coprocessor Segment Overrun", 0 		;0x09 - Legacy
+	INVALID_TSS db "Invalid Segment Selector used", 0 			;0x0A
+	SEGMENT_MISSING db "Segment had present bit set to 0", 0 		;0x0B
+	STACK_SEGMENT db "A Stack-Segment fault occured", 0 			;0x0C
+	GENERAL_PROTECTION db "A General Protection Fault occured", 0 		;0x0D
+	;; A page fault is normal, the user doesn't need to be informed		;0x0E
+	;; RESERVED								;0x0F
+	X87_EXCEPTION db "x87 FPE occured", 0 					;0x10
+	ALIGNMENT_FAILURE db "Alignment Check Failure", 0 			;0x11
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------------End of handlers------------------------------ ;;
