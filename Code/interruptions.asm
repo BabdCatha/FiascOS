@@ -19,7 +19,7 @@ idt_setup:
 	mov cl, 0x0		;ecx should contain the column number
 	call vga_print		;we call the print function
 
-	int 0x11 		;Test interrupt
+	int 0x12 		;Test interrupt
 	
 	jmp $
 
@@ -182,8 +182,18 @@ idt_start:
 	db 0x00							;unused
 	db 0x8E							;trap gate in ring 0
 	dw (AC_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #12 - Machine Check Failure (abort)
+	;; Processor-specific exception. Can occur when failing on a self-check, for example because
+	;; of bad memory, bus errors, cache errors, etc. Disabled by default, enabled by setting
+	;; the CR4.MCE bit.
+	dw (MC_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (MC_handler - KERNEL_START >> 16)			;the high bytes of the handler address
 	
-times 956 dw 0
+times 948 dw 0
 	
 idt_end:
 
@@ -395,6 +405,17 @@ AC_handler:			;Int 0x11
 	call vga_print
 
 	iret 			;non fatal exception
+
+MC_handler:			;Int 0x12
+	;; We simply print a message showing the user what happened
+	mov ebx, MACHINE_CHECK_FAIL	;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	jmp $ 			;fatal exception
 	
 unhandled_exception_handler:
 	
@@ -428,6 +449,7 @@ unhandled_exception_handler:
 	;; RESERVED								;0x0F
 	X87_EXCEPTION db "x87 FPE occured", 0 					;0x10
 	ALIGNMENT_FAILURE db "Alignment Check Failure", 0 			;0x11
+	MACHINE_CHECK_FAIL db "Machine Check Failure", 0 			;0x12
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------------End of handlers------------------------------ ;;
