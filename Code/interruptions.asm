@@ -19,7 +19,37 @@ idt_setup:
 	mov cl, 0x0		;ecx should contain the column number
 	call vga_print		;we call the print function
 
-	int 0x12 		;Test interrupt
+	;; Remapping the PICs
+	;; This is done because the interrupts of the first PIC are numbered 8-15, which conflicts
+	;; with the protected mode exceptions. The second PIC is remapped for convenience.
+	;; PIC1 uses interrupts 32-39
+	;; PIC2 uses interrupts 40-47
+	mov al, 0x11
+	out 0x20, al		;restarting PIC1
+	out 0xa0, al		;restarting PIC2
+
+	mov al, 0x20
+	out 0x21, al		;PIC1 now starts at 32
+	mov al, 0x28
+	out 0xa1, al		;PIC2 now starts at 40
+
+	;; setting up cascading
+	mov al, 0x04
+	out 0x21, al
+	mov al, 0x02
+	out 0xa1, al
+
+	mov al, 0x01
+	out 0x21, al
+	out 0xa1, al
+	;; done
+
+	;; disabling all IRQs
+	mov ax, 0xff
+	out 0x21, ax		
+	out 0xa1, ax
+
+	int 0x00 		;Test interrupt
 	
 	jmp $
 
@@ -192,8 +222,25 @@ idt_start:
 	db 0x00							;unused
 	db 0x8E							;trap gate in ring 0
 	dw (MC_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #13 - SIMD Floating-Point Exception (fault)
+	;; Occurs when an unmasked 128-bit media floating-point exception occurs and the
+	;; CR4.OSXMMEXCPT bit is set. Otherwise, this would cause an UD exception.
+	dw (XM_handler - KERNEL_START & 0xffff)			;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (XM_handler - KERNEL_START >> 16)			;the high bytes of the handler address
+
+	;; pm exception #14 - Virtualization Exception (fault)
+	;; Unhandled for now
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
 	
-times 948 dw 0
+times 936 dw 0
 	
 idt_end:
 
@@ -416,6 +463,17 @@ MC_handler:			;Int 0x12
 	call vga_print
 
 	jmp $ 			;fatal exception
+
+XM_handler:			;Int 0x13
+	;; We simply print a message showing the user what happened
+	mov ebx, SIMD_EXCEPTION		;we print an error message
+	mov ch, 0x04			;red on black
+	mov al, 0x0
+	mov cl, 0x0
+	
+	call vga_print
+
+	iret 			;non-fatal exception
 	
 unhandled_exception_handler:
 	
@@ -450,6 +508,8 @@ unhandled_exception_handler:
 	X87_EXCEPTION db "x87 FPE occured", 0 					;0x10
 	ALIGNMENT_FAILURE db "Alignment Check Failure", 0 			;0x11
 	MACHINE_CHECK_FAIL db "Machine Check Failure", 0 			;0x12
+	SIMD_EXCEPTION db "SIMD Exception", 0 					;0x13
+	;; Virtualization Exception - Not handled				;0x14
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------------End of handlers------------------------------ ;;
