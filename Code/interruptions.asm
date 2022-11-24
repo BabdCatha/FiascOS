@@ -45,11 +45,11 @@ idt_setup:
 	;; done
 
 	;; disabling all IRQs
-	mov ax, 0xff
-	out 0x21, ax		
-	out 0xa1, ax
+	mov al, 0xff
+	out 0x21, al	
+	out 0xa1, al
 
-	int 0x00 		;Test interrupt
+	sti
 	
 	jmp $
 
@@ -239,8 +239,91 @@ idt_start:
 	db 0x00							;unused
 	db 0x8E							;trap gate in ring 0
 	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #15 - Control Protection Exception (fault)
+	;; Triggered when a control flow transfer attempt did not respect branch
+	;; tracking constraints
+	;; Unhandled for now
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #16 - Reserved
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #17 - Reserved
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #18 - Reserved
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #19 - Reserved
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #1A - Reserved
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #1B - Reserved
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #1C - Hypervisor Injection Exception
+	;; Unhandled for now
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #1D - VMM Communication Exception
+	;; Unhandled for now
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #1E - Security Exception (fault)
+	;; Unhandled for now
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #1F - Reserved
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
 	
-times 936 dw 0
+times 892 dw 0
 	
 idt_end:
 
@@ -510,6 +593,17 @@ unhandled_exception_handler:
 	MACHINE_CHECK_FAIL db "Machine Check Failure", 0 			;0x12
 	SIMD_EXCEPTION db "SIMD Exception", 0 					;0x13
 	;; Virtualization Exception - Not handled				;0x14
+	;; Control Protection Exception - Not handled				;0x15
+	;; RESERVED								;0x16
+	;; RESERVED								;0x17
+	;; RESERVED								;0x18
+	;; RESERVED								;0x19
+	;; RESERVED								;0x1A
+	;; RESERVED								;0x1B
+	;; Hypervisor Injection Exception					;0x1C
+	;; VMM Communication Exception						;0x1D
+	;; Security Exception							;0x1E
+	;; RESERVED								;0x1F
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------------End of handlers------------------------------ ;;

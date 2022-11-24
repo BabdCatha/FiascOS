@@ -19,7 +19,7 @@ os-image.bin: bootsect.bin interruptions.bin
 	cat $^ > $@
 
 run: os-image.bin
-	qemu-system-x86_64 -drive format=raw,file=$<
+	qemu-system-x86_64 -drive format=raw,file=$< -d int
 
 clean:
 	rm *.bin *.o
