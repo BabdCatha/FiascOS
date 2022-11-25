@@ -44,8 +44,8 @@ idt_setup:
 	out 0xa1, al
 	;; done
 
-	;; disabling all IRQs
-	mov al, 0xff
+	;; disabling all IRQs except the Keyboard
+	mov al, 0xfd
 	out 0x21, al	
 	out 0xa1, al
 
@@ -322,8 +322,22 @@ idt_start:
 	db 0x00							;unused
 	db 0x8E							;trap gate in ring 0
 	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #20 - Programmable timer
+	dw (unhandled_exception_handler - KERNEL_START & 0xffff);the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (unhandled_exception_handler - KERNEL_START >> 16)	;the high bytes of the handler address
+
+	;; pm exception #21 - Keyboard Interrupt
+	dw (keyboard_handler - KERNEL_START & 0xffff)		;the low bytes of the handler address
+	dw 0b0000000000001000					;segment selector
+	db 0x00							;unused
+	db 0x8E							;trap gate in ring 0
+	dw (keyboard_handler - KERNEL_START >> 16)		;the high bytes of the handler address
 	
-times 892 dw 0
+times 884 dw 0
 	
 idt_end:
 
@@ -557,6 +571,35 @@ XM_handler:			;Int 0x13
 	call vga_print
 
 	iret 			;non-fatal exception
+
+keyboard_handler:
+
+	in al, 0x60			;The keyboard scancode is stored in port 0x60
+
+	cmp al, 0x80
+	ja keyboard_handler_end
+	
+	mov ebx, scancodes_translations
+	add ebx, eax
+	add ebx, eax
+	
+	mov ch, 0x04			;red on black
+	mov al, 0x00
+	mov cl, [keyboard_x]
+	
+	call vga_print
+
+	mov cl, [keyboard_x]
+	add cl, 0x01
+	mov [keyboard_x], cl
+
+keyboard_handler_end:
+
+	;; Sending End Of Interrupt (EOI) to the PIC
+	mov al, 0x20 		;EOI Code
+	out 0x20, al
+
+	iret 			;returning to the main code
 	
 unhandled_exception_handler:
 	
@@ -604,6 +647,8 @@ unhandled_exception_handler:
 	;; VMM Communication Exception						;0x1D
 	;; Security Exception							;0x1E
 	;; RESERVED								;0x1F
+	;; Programmable Timer							;0x20
+	;; Keyboard Interrupt							;0x21
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
 	;; ---------------------------End of handlers------------------------------ ;;
@@ -739,6 +784,26 @@ vga_clear_done:
 	
 	;; ----------------------32 bit mode clear screen-------------------------- ;;
 	BOOT_MSG_32BIT db "initialized 32bit mode", 0
+
+	;; -------------------------keyboard data area----------------------------- ;;
+	
+keyboard_x:	db 0x00
+keyboard_y:	db 0x00
+
+	;; This holds a table translating scancodes into the corresponding character
+scancodes_translations:
+	db "*", 0		;0x00 - Error
+	db "*", 0		;0x01 - Escape
+	db "1", 0		;0x02 - 1
+	db "2", 0		;0x03 - 2
+	db "3", 0		;0x04 - 3
+	db "4", 0		;0x05 - 4
+	db "5", 0		;0x06 - 5
+	db "6", 0		;0x07 - 6
+	db "7", 0		;0x08 - 7
+	db "8", 0		;0x09 - 8
+	db "9", 0		;0x0A - 9
+	db "0", 0		;0x0B - 0
 
 	;; ----------------A memory area to process error codes-------------------- ;;
 	;; 256 bytes long
