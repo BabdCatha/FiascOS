@@ -576,19 +576,26 @@ keyboard_handler:
 
 	in al, 0x60			;The keyboard scancode is stored in port 0x60
 
-	cmp al, 0x80
+	cmp al, 0x80			;If this is a key release, we ignore it
 	ja keyboard_handler_end
+
+	;; This is the part translating the scancodes into the ASCII character equivalent
+	mov ebx, scancodes_translations ;Looking up the translation table address
+	add ebx, eax			;Adding the right offset (the scancode)
+	mov ebx, [ebx]			;We fetch the data at that address
+	mov [keyboard_unpack], bl	;We store it in the buffer. The byte is directly followed
+;;; 					;by a NULL byte to only display a single character
+
+	;; Setting the character to be displayed
+	mov ebx, keyboard_unpack
 	
-	mov ebx, scancodes_translations
-	add ebx, eax
-	add ebx, eax
-	
-	mov ch, 0x04			;red on black
+	mov ch, 0x0f			;white on black
 	mov al, 0x00
 	mov cl, [keyboard_x]
 	
 	call vga_print
 
+	;; Adding one to the character position on screen
 	mov cl, [keyboard_x]
 	add cl, 0x01
 	mov [keyboard_x], cl
@@ -600,6 +607,11 @@ keyboard_handler_end:
 	out 0x20, al
 
 	iret 			;returning to the main code
+
+	;; Memory area to create the character to be displayed
+keyboard_unpack:
+	db 0x00
+	db 0x00 		;String terminator
 	
 unhandled_exception_handler:
 	
@@ -792,18 +804,90 @@ keyboard_y:	db 0x00
 
 	;; This holds a table translating scancodes into the corresponding character
 scancodes_translations:
-	db "*", 0		;0x00 - Error
-	db "*", 0		;0x01 - Escape
-	db "1", 0		;0x02 - 1
-	db "2", 0		;0x03 - 2
-	db "3", 0		;0x04 - 3
-	db "4", 0		;0x05 - 4
-	db "5", 0		;0x06 - 5
-	db "6", 0		;0x07 - 6
-	db "7", 0		;0x08 - 7
-	db "8", 0		;0x09 - 8
-	db "9", 0		;0x0A - 9
-	db "0", 0		;0x0B - 0
+	db "*"		;0x00 - Error
+	db "*"		;0x01 - Escape
+	db "1"		;0x02 - 1
+	db "2"		;0x03 - 2
+	db "3"		;0x04 - 3
+	db "4"		;0x05 - 4
+	db "5"		;0x06 - 5
+	db "6"		;0x07 - 6
+	db "7"		;0x08 - 7
+	db "8"		;0x09 - 8
+	db "9"		;0x0A - 9
+	db "0"		;0x0B - 0
+	db ")"		;0x0C - )
+	db "="		;0x0D - =
+	db "*"		;0x0E - Backspace
+	db "*"		;0x0F - Tab
+	db "a"		;0x10 - a
+	db "z"		;0x11 - z
+	db "e"		;0x12 - e
+	db "r"		;0x13 - r
+	db "t"		;0x14 - t
+	db "y"		;0x15 - y
+	db "u"		;0x16 - u
+	db "i"		;0x17 - i
+	db "o"		;0x18 - o
+	db "p"		;0x19 - p
+	db "^"		;0x1A - ^
+	db "$"		;0x1B - $
+	db "*"		;0x1C - Enter
+	db "*"		;0x1D - Left Ctrl
+	db "q"		;0x1E - q
+	db "s"		;0x1F - s
+	db "d"		;0x20 - d
+	db "f"		;0x21 - f
+	db "g"		;0x22 - g
+	db "h"		;0x23 - h
+	db "j"		;0x24 - j
+	db "k"		;0x25 - k
+	db "l"		;0x26 - l
+	db "m"		;0x27 - m
+	db "*"		;0x28 - ù (non-ASCII)
+	db "*"		;0x29 - ² (non-ASCII)
+	db "*"		;0x2A - Left Shift
+	db "*"		;0x2B - *
+	db "w"		;0x2C - w
+	db "x"		;0x2D - x
+	db "c"		;0x2E - c
+	db "v"		;0x2F - v
+	db "b"		;0x30 - b
+	db "n"		;0x31 - n
+	db ","		;0x32 - ,
+	db ";"		;0x33 - ;
+	db ":"		;0x34 - :
+	db "!"		;0x35 - !
+	db "*"		;0x36 - Right Shift
+	db "*"		;0x37 - Keypad *
+	db "*"		;0x38 - Left Alt
+	db " "		;0x39 - SpaceBar
+	db "*"		;0x3A - Caps Lock
+	db "*"		;0x3B - F1
+	db "*"		;0x3C - F2
+	db "*"		;0x3D - F3
+	db "*"		;0x3E - F4
+	db "*"		;0x3F - F5
+	db "*"		;0x40 - F6
+	db "*"		;0x41 - F7
+	db "*"		;0x42 - F8
+	db "*"		;0x43 - F9
+	db "*"		;0x44 - F10
+	db "*"		;0x45 - NumLock
+	db "*"		;0x46 - Scroll
+	db "7"		;0x47 - Keypad 7
+	db "8"		;0x48 - Keypad 8
+	db "9"		;0x49 - Keypad 9
+	db "-"		;0x4A - Keypad -
+	db "4"		;0x4B - Keypad 4
+	db "5"		;0x4C - Keypad 5
+	db "6"		;0x4D - Keypad 6
+	db "+"		;0x4E - Keypad +
+	db "1"		;0x4F - Keypad 1
+	db "2"		;0x50 - Keypad 2
+	db "3"		;0x51 - Keypad 3
+	db "0"		;0x52 - Keypad 0
+	db "."		;0x53 - Keypad .
 
 	;; ----------------A memory area to process error codes-------------------- ;;
 	;; 256 bytes long
