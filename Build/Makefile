@@ -6,17 +6,20 @@
 all: run
 
 # Notice how dependencies are built as needed
-interruptions.bin: interruptions.o
-	i386-elf-ld -o $@ -Ttext 0x9000 $^ --oformat binary
-
-interruptions.o: ../Code/interruptions.asm
+interruptions.elf: ../Code/interruptions.asm
 	nasm $< -f elf -o $@
 
 bootsect.bin: ../Code/bootsect.asm
 	nasm $< -f bin -o $@
 
-os-image.bin: bootsect.bin interruptions.bin
-	cat $^ > $@
+bootsect.elf: bootsect.bin
+	i386-elf-objcopy -I binary -O elf32-i386 --rename-section .data=.bootsector $< $@
+
+os-image.elf: bootsect.elf interruptions.elf
+	i386-elf-ld -o $@ -T linker.ld $^ --oformat elf32-i386
+
+os-image.bin: os-image.elf
+	i386-elf-objcopy -O binary $< $@
 
 run: os-image.bin
 	qemu-system-x86_64 -drive format=raw,file=$< -d int

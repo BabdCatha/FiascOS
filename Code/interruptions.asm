@@ -1,5 +1,7 @@
 [bits 32]
 
+section .kernel
+
 	;; The interrupt code should be loaded at address 0x9000
 KERNEL_START equ _start - 0x9000 ;to convert relocatables to absolute adresses
 
