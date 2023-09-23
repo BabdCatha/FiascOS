@@ -1,14 +1,11 @@
-global _ZERO			;used to convert relocatables to absolute numbers
-_ZERO:
-
 [org 0x7c00]
 section .bootsector
 
 	mov bp, 0x9000 		;setting the stack base pointer
-	mov sp, bp 		;the stack is currently empty, so sp = bp
+	mov sp, bp 			;the stack is currently empty, so sp = bp
 
 	mov bx, BOOT_MSG_16BIT 	;bx should contain the string address wehn calling print
-	call print 		;printing a message showing that we booted in 16bit mode
+	call print 				;printing a message showing that we booted in 16bit mode
 
 	;; loading code from the second sector of the disk
 	;; dl is set to the boot disk by the BIOS when booting, and hasn't been modified yet
@@ -28,7 +25,7 @@ section .bootsector
 
 [bits 16]
 switch_to_32bit:
-	cli 			;we disable interrupts
+	cli 					;we disable interrupts
 	lgdt [gdt_descriptor] 	;we load the gdt
 
 	;; setting 32 bit mode in cr0
@@ -55,7 +52,7 @@ init_32bit:
 [bits 32]
 start_32bit:			;start of the 32bit mode instructions
 
-	jmp 0x9000 		;jumping to the kernel
+	jmp 0x9000 		;jumping to the 32bit kernel
 	
 	hlt 			;we stop the CPU
 
@@ -78,17 +75,17 @@ disk_load_16bits:
 	mov al, dh 		;setting the numbers of sectors to read
 	mov dh, 0 		;head 0
 	
-	int 0x13 		;BIOS interrupt for disk operation
+	int 0x13 			;BIOS interrupt for disk operation
 	jc disk_read_error 	;if an error occuped (stored in the carry bit)
 
 	;; if no error occured
-	pop dx 			;we restore dx to compare to what was read
-	cmp al, dh 		;doing the comparison
+	pop dx 					;we restore dx to compare to what was read
+	cmp al, dh 				;doing the comparison
 	jne disk_sectors_error 	;in case of an error
 
 	;; no error at all
 	popa 			;we restore the registers
-	ret			;we return
+	ret				;we return
 
 disk_read_error:
 	mov bx, DISK_READ_ERROR
@@ -109,7 +106,7 @@ print:
 
 print_start:
 	;; moving the right character to the al register and checking for end of string
-	mov al, [bx] 		;the bx register should contain the string address at first.
+	mov al, [bx] 	;the bx register should contain the string address at first.
 	cmp al, 0
 	je done			;if we encounter a NULL byte, the string is over
 
@@ -142,8 +139,8 @@ gdt_code:
 	dw 0xffff 		;segment length (bits 0-15)
 	dw 0x0000 		;segment base (bits 0-15)
 	db 0x00 		;segment base (bits 16-23)
-	db 10011010b 		;flags (8bits)
-	db 11001111b 		;flags (4bits) + segment length (bits 16-19)
+	db 10011010b 	;flags (8bits)
+	db 11001111b 	;flags (4bits) + segment length (bits 16-19)
 	db 0x00 		;segment base (bits 24-31)
 
 	;;GDT for data segment, base = 0x00000000, length = 0xfffff
@@ -151,16 +148,16 @@ gdt_data:
 	dw 0xffff 		;segment length (bits 0-15)
 	dw 0x0000 		;segment base (bits 0-15)
 	db 0x00 		;segment base (bits 16-23)
-	db 10010010b 		;flags (8bits)
-	db 11001111b 		;flags (4bits) + segment length (bits 16-19)
+	db 10010010b 	;flags (8bits)
+	db 11001111b 	;flags (4bits) + segment length (bits 16-19)
 	db 0x00 		;segment base (bits 24-31)	dw 0xffff
 
 gdt_end: 			;used to calculate sizes
 
 	;; GDT descriptor
 gdt_descriptor:
-	dw gdt_end - gdt_start - 1 ;size
-	dd gdt_start		   ;address
+	dw gdt_end - gdt_start - 1	;size
+	dd gdt_start		 		;address
 
 	CODE_SEG equ gdt_code - gdt_start
 	DATA_SEG equ gdt_data - gdt_start
@@ -173,5 +170,5 @@ gdt_descriptor:
 	DISK_READ_ERROR db "Error while reading disk", 0
 	DISK_SECTORS_ERROR db "Wrong number of sectors read", 0
 
-times 510-($-$$) db 0 		;filling the first sector up to the magic bytes
-dw 0xaa55 			;the magic bytes to inform the BIOS this disk is bootable
+times 510-($-$$) db 0 	;filling the first sector up to the magic bytes
+dw 0xaa55 				;the magic bytes to inform the BIOS this disk is bootable

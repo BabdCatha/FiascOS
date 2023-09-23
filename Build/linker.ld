@@ -1,7 +1,8 @@
 MEMORY
 {
   bootsector  (rwx)  : ORIGIN = 0x00007c00, LENGTH = 0x00000200
-  kernel      (rwx)  : ORIGIN = 0x00009000, LENGTH = 0x00008000
+  kernel32    (rwx)  : ORIGIN = 0x00009000, LENGTH = 0x00001000
+  kernel64    (rwx)  : ORIGIN = 0x00001000, LENGTH = 0x00010000
 }
 
 SECTIONS
@@ -11,8 +12,13 @@ SECTIONS
 
     } > bootsector
 
-    .kernel : AT(0x0200)
+    .kernel32 : AT(0x0200)
     {
 
-    } > kernel
+    } > kernel32
+
+    .kernel64 : AT(0x1000)
+    {
+
+    } > kernel64
 }
