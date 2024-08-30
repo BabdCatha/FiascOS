@@ -15,13 +15,13 @@ bootsect.bin: ../Code/bootsect.asm
 	nasm $< -f bin -o $@
 
 bootsect.elf: bootsect.bin
-	i386-elf-objcopy -I binary -O elf32-i386 --rename-section .data=.bootsector $< $@
+	i686-elf-objcopy -I binary -O elf32-i386 --rename-section .data=.bootsector $< $@
 
 os-image.elf: bootsect.elf kernel32.elf kernel64.elf
-	i386-elf-ld -o $@ -T linker.ld $^ --oformat elf32-i386
+	i686-elf-ld -o $@ -T linker.ld $^ --oformat elf32-i386
 
 os-image.bin: os-image.elf
-	i386-elf-objcopy -O binary $< $@
+	i686-elf-objcopy -O binary $< $@
 
 run: os-image.bin
 	qemu-system-x86_64 -drive format=raw,file=$< -d int

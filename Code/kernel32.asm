@@ -15,9 +15,9 @@ idt_setup:
 	
 	mov ebx, BOOT_MSG_32BIT	;this is what will be printed on the screen
 	
-	mov al, 0x0 		;al should contain the line number
+	mov al, 0x00 		;al should contain the line number
 	mov ch, 0x0f 		;dl should contain the color - white on black
-	mov cl, 0x0			;ecx should contain the column number
+	mov cl, 0x00		;ecx should contain the column number
 	call vga_print		;we call the print function
 
 	;; Remapping the PICs
@@ -49,8 +49,6 @@ idt_setup:
 	mov al, 0xfd
 	out 0x21, al	
 	out 0xa1, al
-
-	sti
 	
 	;; After this point, we are making preparations to jump to long mode
 	;; First, we check if the CPUID command is available by trying to flip bit 21
@@ -61,8 +59,74 @@ idt_setup:
 	pop eax
 
 	mov ecx, eax		;; Copying it to ecx for later comparison
-	xor eax, 0x00200000	;; We flip the ID bit (bit 21)
+	xor eax, 1<<21		;; We flip the ID bit (bit 21)
 
+	;; Copying eax to FLAGS using the stack
+	push eax
+	popfd
+
+	;; Copying back the FLAGS to eax
+	;; bit 21 will still be flipped if CPUID is supported
+	pushfd
+	pop eax
+
+	;; Restoring FLAGS using the backup from ecx
+	push ecx
+	popfd
+
+	;; Comparing ecx to eax
+	;; If they are equal, CPUID is not supported
+	xor eax, ecx
+	jnz CPUID_supported
+
+	;;CPUID not supported
+	mov ebx, NO_CPUID	;we print an error message
+	mov ch, 0x04				;red on black
+	mov al, 0x01
+	mov cl, 0x00
+	call vga_print
+	;; Cannot continue, halting
+	hlt
+
+CPUID_supported:
+	;; In this case, the CPUID command can be used to check if long mode is supported
+	;; We need to check if the function to identify long mode is implemented
+	;; https://wiki.osdev.org/Setting_Up_Long_Mode
+
+	mov eax, 0x80000000
+	cpuid
+	cmp eax, 0x80000001
+	jae extended_function_available
+
+	;;Extended function not supported
+	mov ebx, NO_EXTENDED_FUNCTION	;we print an error message
+	mov ch, 0x04					;red on black
+	mov al, 0x01
+	mov cl, 0x00
+	call vga_print
+	;; Cannot continue, halting
+	hlt
+
+extended_function_available:
+
+	;; Using the extended function to check if long mode is available
+	mov eax, 0x80000001
+	cpuid
+	test edx, 1<<29
+	jnz long_mode_available
+
+	;;Long mode not supported
+	mov ebx, NO_LONG_MODE	;we print an error message
+	mov ch, 0x04					;red on black
+	mov al, 0x01
+	mov cl, 0x00
+	call vga_print
+	;; Cannot continue, halting
+	hlt
+
+long_mode_available:
+
+	sti
 	jmp $
 
 idt_start:
@@ -672,7 +736,7 @@ unhandled_exception_handler:
 
 	;; ---------------------------Error messages------------------------------- ;;
 	
-	;; the error message when an unhandled exception occurs
+	;; The error message when an unhandled exception occurs
 	DIVIDE_BY_ZERO db "A division by 0 occured", 0 						;0x00
 	DEBUG db "Debug exception reached", 0	       						;0x01
 	NMI db "Non maskable interrupt occured", 0     						;0x02
@@ -709,6 +773,11 @@ unhandled_exception_handler:
 	;; Keyboard Interrupt												;0x21
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
+	;; Error messages not related to exceptions
+	NO_CPUID db "CPUID not implemented on this CPU", 0
+	NO_EXTENDED_FUNCTION db "Extended function not implemented on this CPU", 0
+	NO_LONG_MODE db "Long mode not implemented on this CPU", 0
+
 	;; ---------------------------End of handlers------------------------------ ;;
 
 	;; ---------------------32 bit mode print function------------------------- ;;
@@ -723,7 +792,8 @@ vga_print:
 
 	pusha
 
-	xor ah, ah	;Resetting ah, so eax = al
+	and eax, 0x000000FF	;Resetting ah, so eax = al
+	and ecx, 0x0000FFFF ;Resetting ecx
 
 	;; defining constants to make things easier
 	VGA_MEMORY_ADDRESS equ 0xb8000
