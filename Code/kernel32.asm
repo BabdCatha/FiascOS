@@ -773,12 +773,12 @@ unhandled_exception_handler:
 	;; Keyboard Interrupt												;0x21
 	UNHANDLED_EXCEPTION db "Unhandled exception error", 0
 
+	;; ---------------------------End of handlers------------------------------ ;;
+
 	;; Error messages not related to exceptions
 	NO_CPUID db "CPUID not implemented on this CPU", 0
 	NO_EXTENDED_FUNCTION db "Extended function not implemented on this CPU", 0
 	NO_LONG_MODE db "Long mode not implemented on this CPU", 0
-
-	;; ---------------------------End of handlers------------------------------ ;;
 
 	;; ---------------------32 bit mode print function------------------------- ;;
 
