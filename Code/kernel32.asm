@@ -126,6 +126,8 @@ extended_function_available:
 
 long_mode_available:
 
+	call enumerate_PCI_devices
+
 	;; paging was not enabled in protected mode, so it does not need to be disabled
 	;; 4 PAE paging tables will be set up at address 0x1000
 	;; We will have:
@@ -915,7 +917,7 @@ vga_print:
 
 vga_print_start:
 
-	cmp al, 24d 		;if the line is greater than the screen size
+	cmp al, 24d 			;if the line is greater than the screen size
 	jg vga_print_scroll 	;we scroll the screen
 	;; This is executed the as many times as necessary to make al less than 24
 	;; 24 being the last line of the screen in VGA text mode
@@ -1126,3 +1128,115 @@ scancodes_translations:
 	
 error_processing_area:
 times 256 db 0x00
+
+PCI_DEVICE_IDENTIFIED db "PCI DEVICE IDENTIFIED: ", 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+enumerate_PCI_devices:
+	pusha
+
+	call vga_clear_screen
+
+	;; https://wiki.osdev.org/PCI
+
+	;; Checking all 64 possible devices on bus 0
+	mov cx, 0x0040 		;; Loop variable
+
+	.enumerate_loop_begin:
+		mov ah, 0x00
+		mov al, cl
+		mov bh, 0x00
+		mov bl, 0x00
+
+		call PCI_read_word
+
+		;; Checking if the device responded
+		cmp ax, 0xffff
+
+		je enumerate_PCI_devices.device_not_valid
+
+		;; Device is valid, printing it
+		push cx
+		push eax
+
+		mov ebx, PCI_DEVICE_IDENTIFIED
+	
+		mov ch, 0x0f	;white on black
+		mov al, 0x00
+		mov cl, 0x00
+	
+		call vga_print
+
+		pop eax
+		pop cx
+
+		;;TODO: print value of EAX
+
+	.device_not_valid:
+
+		dec cx
+
+		jnz enumerate_PCI_devices.enumerate_loop_begin
+
+	.enumerate_loop_end:
+
+
+	jmp $
+
+	popa
+	ret
+
+PCI_read_word:
+	;; Read a single register from a PCI device
+	;; Parameters:
+	;; ah - PCI bus number
+	;; al - PCI device number
+	;; bh - Function number
+	;; bl - register offset
+	;; Return:
+	;; eax - PCI register
+
+	PCI_ENABLE	equ 1 << 31
+
+	push cx
+	push edx
+	xor cx, cx
+	xor edx, edx
+
+	mov cx, ax
+	
+	;; Setting the address in eax, and the port in dx
+	;; edx is also used in intermediate calculations
+	xor eax, eax
+	mov eax, PCI_ENABLE
+
+	;; Setting up the Bus number
+	movzx edx, ch
+	shl edx, 16
+	or eax, edx
+
+	;; Setting up the Device number
+	movzx edx, cl
+	shl edx, 11
+	or eax, edx
+
+	;; Setting up the function
+	movzx edx, bh
+	shl edx, 8
+	or eax, edx
+
+	;; Setting up the offset
+	movzx edx, bl
+	and edx, 0xFFFFFFFC		;; The last two bits must be zeroes
+	or eax, edx
+
+	;; Outputting to address 0x0cf8
+	mov dx, 0x0cf8
+	out dx, eax
+
+	;; Reading the result
+	mov dx, 0x0cfc
+	in eax, dx
+
+	pop edx
+	pop cx
+	ret
