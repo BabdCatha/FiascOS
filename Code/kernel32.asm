@@ -126,8 +126,122 @@ extended_function_available:
 
 long_mode_available:
 
-	sti
+	;; paging was not enabled in protected mode, so it does not need to be disabled
+	;; 4 PAE paging tables will be set up at address 0x1000
+	;; We will have:
+	;; PLM4T[0] -> PDPT						At address 0x1000
+	;; PDPT[0] -> PDT						At address 0x2000
+	;; PDT[0] -> PT 						At address 0x3000
+	;; PT -> 0x00000000 to 0x00200000 		At address 0x4000
+	;; Effectively identity mapping the first two megabytes of memory
+
+	mov edi, 0x1000	;; Setting the destination address for the tables
+	mov cr3, edi
+	xor eax, eax
+	mov ecx, 0x1000	;; Size of the tables
+	;; Since each table has 512 8 bytes entry, we need 4kB of memory cleared
+	rep stosd		;; Clearing the momory
+	mov edi, cr3
+
+	;; Now that the memory is clear, we can write the tables
+	mov dword [edi], 0x2003					;; Setting PLM4T[0] to 0x2003 (0x2000 + 0x03 to indicate page presence)
+	add edi, 0x1000							;; Moving to the PDPT
+	mov dword [edi], 0x3003					;; Setting PDPT[0] to 0x3003
+	add edi, 0x1000							;; Moving to the PDT
+	mov dword [edi], 0x4003					;; Setting PDT[0] to 0x4003
+	add edi, 0x1000							;; Moving to the PT
+
+	;; Identity mapping the first two megabytes
+	mov ebx, 0x00000003
+	mov ecx, 0x00000100
+
+	;; Loop to set all 512 entries of the PT to itself + 0x03
+.sePTEntry:
+	mov dword [edi], ebx
+	add ebx, 0x1000
+	add edi, 8
+	loop .sePTEntry
+
+	;; Setting the PAE-bit (bit 5) in CR4
+	mov eax, cr4
+	or eax, 1 << 5
+	mov cr4, eax
+
+	;; Switching to compatibility mode
+	;; First setting the LM (long mode) bit
+	mov ecx, 0xc0000080				;; Set the C register to 0xc0000080, which is the EFER model-specific register
+	rdmsr							;; Read from the MSR
+	or eax, 1 << 8 					;; Set the LM bit (bit 8)
+	wrmsr							;; Overwriting the MSR
+
+	;; Then enabling Paging
+	mov eax, cr0
+	or eax, 1 << 31					;; Setting the PG bit
+	mov cr0, eax
+
+	;; We are now in compatibility mode
+	;; Setting up the 64 bit GDT
+
+	lgdt [GDT64.Pointer]         ; Load the 64-bit global descriptor table.
+	jmp GDT64.Code:Realm64       ; Set the code segment and enter 64-bit long mode.
+
+	; Use 64-bit. Temporary
+[BITS 64]
+
+Realm64:
+    cli                           ; Clear the interrupt flag.
+    mov ax, GDT64.Data            ; Set the A-register to the data descriptor.
+    mov ds, ax                    ; Set the data segment to the A-register.
+    mov es, ax                    ; Set the extra segment to the A-register.
+    mov fs, ax                    ; Set the F-segment to the A-register.
+    mov gs, ax                    ; Set the G-segment to the A-register.
+    mov ss, ax                    ; Set the stack segment to the A-register.
+    mov edi, 0xB8000              ; Set the destination index to 0xB8000.
+    mov rax, 0x1F201F201F201F20   ; Set the A-register to 0x1F201F201F201F20.
+    mov ecx, 500                  ; Set the C-register to 500.
+    rep stosq                     ; Clear the screen.
+    hlt                           ; Halt the processor.
+
 	jmp $
+
+	;; ----------------------Setting up the 64-bit GDT-------------------------- ;;
+
+	; Access bits
+	PRESENT        equ 1 << 7
+	NOT_SYS        equ 1 << 4
+	EXEC           equ 1 << 3
+	DC             equ 1 << 2
+	RW             equ 1 << 1
+	ACCESSED       equ 1 << 0
+
+	; Flags bits
+	GRAN_4K       equ 1 << 7
+	SZ_32         equ 1 << 6
+	LONG_MODE     equ 1 << 5
+
+GDT64:
+    .Null: equ $ - GDT64
+        dq 0
+    .Code: equ $ - GDT64
+        dd 0xFFFF                                   ; Limit & Base (low, bits 0-15)
+        db 0                                        ; Base (mid, bits 16-23)
+        db PRESENT | NOT_SYS | EXEC | RW            ; Access
+        db GRAN_4K | LONG_MODE | 0xF                ; Flags & Limit (high, bits 16-19)
+        db 0                                        ; Base (high, bits 24-31)
+    .Data: equ $ - GDT64
+        dd 0xFFFF                                   ; Limit & Base (low, bits 0-15)
+        db 0                                        ; Base (mid, bits 16-23)
+        db PRESENT | NOT_SYS | RW                   ; Access
+        db GRAN_4K | SZ_32 | 0xF                    ; Flags & Limit (high, bits 16-19)
+        db 0                                        ; Base (high, bits 24-31)
+    .TSS: equ $ - GDT64
+        dd 0x00000068
+        dd 0x00CF8900
+    .Pointer:
+        dw $ - GDT64 - 1
+        dq GDT64
+
+[bits 32]
 
 idt_start:
 	;; pm exception #0 - Divide by zero error (fault) 

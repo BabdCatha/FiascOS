@@ -52,9 +52,9 @@ init_32bit:
 [bits 32]
 start_32bit:			;start of the 32bit mode instructions
 
-	jmp 0x9000 		;jumping to the 32bit kernel
+	jmp 0x9000 			;jumping to the 32bit kernel
 	
-	hlt 			;we stop the CPU
+	hlt 				;we stop the CPU
 
 	;; ----------------------16 bit disk read function------------------------- ;;
 
@@ -165,7 +165,7 @@ gdt_descriptor:
 	;; -------------------------Setting up the GDT----------------------------- ;;
 
 
-	BOOT_MSG_16BIT db "starting in 16bit mode", 0
+	BOOT_MSG_16BIT db "starting in 16bit mode", 10, 0
 
 	DISK_READ_ERROR db "Error while reading disk", 0
 	DISK_SECTORS_ERROR db "Wrong number of sectors read", 0
