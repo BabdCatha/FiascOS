@@ -972,12 +972,14 @@ vga_print_scroll:
 	;; We will start at line 1, column 0, and move forward from there. Each time
 	;; copying the current 4 bytes to the line before;
 
-	mov ebx, VGA_MEMORY_ADDRESS + 0xa0 ;address of line 1, col0
+	mov ebx, VGA_MEMORY_ADDRESS ;address of line 1, col0
+	add ebx, 0xa0
 
 vga_print_scroll_loop:	
-	mov ecx, [ebx]			   ;moving the data at address [ebx] to ecx
-	mov [ebx - 0xa0], ecx		   ;moving the data from ecx to the memory
-	add ebx, 0x4			   ;we move to the next the characters
+	mov ecx, [ebx]			 ;moving the data at address [ebx] to ecx
+	sub ebx, 0xa0
+	mov [ebx], ecx		     ;moving the data from ecx to the memory
+	add ebx, 0x4		     ;we move to the next the characters
 
 	cmp ebx, VGA_MEMORY_END  ;if we haven't copied the whole screen
 	jb vga_print_scroll_loop ;we loop back to continue
@@ -1030,6 +1032,92 @@ vga_clear_done:
 	
 	;; ----------------------32 bit mode clear screen-------------------------- ;;
 	BOOT_MSG_32BIT db "initialized 32bit mode", 0
+
+HEX_PRINT_LOOKUP_TABLE db "0123456789ABCDEF"
+HEX_PRINT_MEMORY db "12345678", 0
+
+vga_print_hex:
+	;; Function to print a register/hex value
+	;; Parameters:
+	;; ebx - pointer to a memory area
+	;; ah - number of bytes to print (max 4)
+	;; al - line number
+	;; ch - print color
+	;; cl - column number
+	;; Return values:
+	;; None
+
+	;pusha
+	push ecx
+	push eax
+	push edx
+
+	;; Saving the number of characters to print in ah
+	;; Each byte needs two characters to be displayed
+	shl ah, 1
+
+	;; Setting the null terminator
+	movzx ecx, ah
+	add ecx, HEX_PRINT_MEMORY
+	mov byte [ecx], 0x00
+
+	;; At this point, ah contains the number of half-bytes we need to print, and ecx points to the end of the
+	;; memory region holding the string to print
+	;; To be more efficient, we will build it from the back
+
+	dec ecx
+	dec ah
+
+	and eax, 0x0000FF00
+	xchg ah, al
+	shr al, 1
+
+	add ebx, eax 	;; ebx point to the last byte to be printed
+
+	.conversion_loop_start:
+		;; We translate the lower 4 bits, then the higher 4 bits
+		xor eax, eax 						;; eax is NULL
+		mov byte al, [ebx]					;; Getting the byte to print
+
+		and al, 0x0F  						;; Isolating the lower nibble
+
+		add eax, HEX_PRINT_LOOKUP_TABLE		;; Getting the corresponding character address in eax
+
+		xor dl, dl
+		mov byte dl, [eax]
+		mov byte [ecx], dl
+
+		;;Handling the higher nibble
+		dec ecx
+
+		xor eax, eax
+		mov byte al, [ebx]
+		and al, 0xF0
+		shr al, 0x04
+
+		add eax, HEX_PRINT_LOOKUP_TABLE
+		xor dl, dl
+		mov byte dl, [eax]
+		mov byte [ecx], dl
+
+		dec ecx
+		dec ebx
+
+		cmp ecx, HEX_PRINT_MEMORY			;; Checking if we are done
+		ja vga_print_hex.conversion_loop_start
+
+
+
+	mov ebx, HEX_PRINT_MEMORY
+
+	pop edx
+	pop eax
+	pop ecx
+
+	call vga_print
+
+	;popa
+	ret
 
 	;; -------------------------keyboard data area----------------------------- ;;
 	
@@ -1129,7 +1217,8 @@ scancodes_translations:
 error_processing_area:
 times 256 db 0x00
 
-PCI_DEVICE_IDENTIFIED db "PCI DEVICE IDENTIFIED: ", 0, 0, 0, 0, 0, 0, 0, 0, 0
+PCI_DEVICE_IDENTIFIED db "PCI DEVICE IDENTIFIED: 0x", 0, 0, 0, 0, 0, 0, 0, 0, 0
+PCI_VECTOR db 0xDE, 0xAD, 0xBE, 0xEF
 
 enumerate_PCI_devices:
 	pusha
@@ -1140,6 +1229,7 @@ enumerate_PCI_devices:
 
 	;; Checking all 64 possible devices on bus 0
 	mov cx, 0x0040 		;; Loop variable
+	mov dl, 0x00 		;; Line counter
 
 	.enumerate_loop_begin:
 		mov ah, 0x00
@@ -1160,13 +1250,33 @@ enumerate_PCI_devices:
 
 		mov ebx, PCI_DEVICE_IDENTIFIED
 	
-		mov ch, 0x0f	;white on black
-		mov al, 0x00
+		mov ch, 0x0f	;; white on black
+		mov al, dl
 		mov cl, 0x00
 	
 		call vga_print
 
 		pop eax
+
+		xchg ah, al 	;; Endianness magic
+		ror eax, 0x10
+		xchg ah, al
+		ror eax, 0x10
+
+
+		mov dword [PCI_VECTOR], eax
+
+		mov ah, 0x04
+		mov ch, 0x0f
+		mov al, dl
+		mov cl, 0x19
+		mov ebx, PCI_VECTOR
+
+		call vga_print_hex
+
+		inc dl
+
+		;pop eax
 		pop cx
 
 		;;TODO: print value of EAX
@@ -1178,7 +1288,6 @@ enumerate_PCI_devices:
 		jnz enumerate_PCI_devices.enumerate_loop_begin
 
 	.enumerate_loop_end:
-
 
 	jmp $
 
