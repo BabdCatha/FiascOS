@@ -1,0 +1,478 @@
+\documentclass[12pt,letterpaper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc} 
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+\usepackage{wrapfig}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{bytefield}
+\usepackage[justification=centering]{caption}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1em}
+
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{minted}
+\usepackage{tikz}
+\usepackage{tabularx}
+\usepackage{colortbl}
+\usepackage{register}
+\usepackage{mdframed}
+\usepackage[hypcap=false]{caption}
+\usetikzlibrary{automata, positioning, arrows}
+
+\hypersetup{
+    colorlinks=true,
+    citecolor=black,
+    linkcolor=black,
+    urlcolor=blue,
+}
+
+\newcolumntype{Y}{>{\centering\arraybackslash}X}
+
+\tikzset{
+->, % makes the edges directed
+node distance=5cm, % specifies the minimum distance between two nodes. Change if necessary.
+every state/.style={fill=gray!10}, % sets the properties for each ’state’ node
+initial text=$ $, % sets the text that appears on the start arrow
+}
+
+%-------------------------------------------------------------------------------------------------------------
+%Defining new colors
+
+%https://www.martin-demling.de/2011/06/memory-maps-in-latex-using-the-bytefield-package/
+% facilitates the creation of memory maps. Start address at the bottom, end address at the top.
+% Addresses will be print with a leading '0x' and in upper case.
+% syntax: \memsection{end address}{start address}{height in lines}{text in box}
+\newcommand{\memsection}[4]{
+	\bytefieldsetup{bitheight=#3\baselineskip}	% define the height of the memsection
+	\bitbox[]{8}{
+		\texttt{0x\uppercase{#1}}	 % print end address
+		\\ \vspace{#3\baselineskip} \vspace{-2\baselineskip} \vspace{-#3pt} % do some spacing
+		\texttt{0x\uppercase{#2}} % print start address
+	}
+	\bitbox{16}{#4} % print box with caption
+}
+
+%https://tex.stackexchange.com/questions/302388/bytefield-colors-and-baseline-align
+\newcommand{\colorbitbox}[3]{%
+  \sbox0{\bitbox{#2}{#3}}%
+  \makebox[0pt][l]{\textcolor{#1}{\rule[-\dp0]{\wd0}{\ht0}}}%
+  \bitbox{#2}{#3}%
+}
+
+\newcommand{\colorbitheader}[3][\tiny]{%
+  \sbox0{\bitheader[#1]{#3}}%
+  \makebox[0pt][l]{\textcolor{#2}{\rule[-\dp0]{\textwidth}{13pt}}}%
+  \bitheader[#1]{#3}%
+}
+%-------------------------------------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------------------------------------
+%Defining new colors
+%https://latexcolor.com/
+\definecolor{palette1_blue}{HTML}{B8DFE6}
+\definecolor{palette1_lightgrey}{HTML}{DBD7D2}
+\definecolor{palette1_pink}{HTML}{FFDFEB}
+\definecolor{palette1_orange}{HTML}{FFEFA7}
+\definecolor{palette1_lightgreen}{HTML}{C9FBAC}
+\definecolor{palette1_green}{HTML}{82F2A7}
+\definecolor{palette1_red}{HTML}{EF3F3F}
+\definecolor{palette1_grey}{HTML}{BEBEBE}
+%-------------------------------------------------------------------------------------------------------------
+
+\hbadness=10000
+
+\title{FiascOS documentation \\
+\vspace{2cm}
+\includegraphics[width=0.25\textwidth]{Images/logo.png} \\
+\vspace{2cm}}
+
+\author{Cyril THOMAS}
+\date{\today}
+
+\begin{document}
+\maketitle
+\newpage
+\tableofcontents
+
+\newpage
+
+%-----Introduction
+\section{Introduction}
+\paragraph{}
+This project is intented to be a learning project, not a real application. I wanted to learn how relatively modern computers work in details, and how they differ from simpler microcontrollers.
+
+\section{The boot process}
+\paragraph{}
+When a (relatively) modern computer is turned on, the first thing that has control over it is the BIOS (Basic Input/Output System). It's job is to initialize power control systems, input/output systems, and find a suitable drive to boot. In order to do that, it goes through every disk present on the system, and searches their first sector (the first 512 bytes) for a magic marker (the two bytes \textbf{0xAA55} at address \textbf{0x1FE}) indicating that the drive is bootable. When one is found, the first sector is loaded in RAM at address \textbf{0x7C00}, and the processor jumps to this address, giving the OS control over the processor.
+
+\paragraph{}
+At this stage, the processor is in 16-bit real mode. This means that we have a limited access to the memory, the interruptions, and the connected devices. In this mode, we only have access to 1 MiB of memory, because we can only use 20-bit addresses. In order to use 20-bit addresses with 16-bit registers, there is a system of segments and offsets, usually represented in this way : \textbf{SEGMENT:OFFSET}. The real physical address can then be reconstructed using this formula :
+
+\begin{center}
+    ADDR = (SEGMENT $<<$ 4) + OFFSET = SEGMENT $\times$ 16 + OFFSET
+\end{center}
+
+\paragraph{}
+It also means that in this mode, any address actually has 4096 ways to point to it. For example, addresses \textbf{12ab:34cd} and \textbf{12ac:34bd} both translate to address \textbf{0x15f7d}
+
+\paragraph{}
+The role of this first sector is to initialize the memory layout, load more code, and then switch to 32-bit protected mode.
+
+\paragraph{}
+In real mode, we can use the BIOS to perform some operations for us. For example, reading data from the disk and loading it into memory can be done using the BIOS interrupt 0x13. By putting the required data into the CPU registers and calling this interruption, the BIOS will handle this operation for us. In the case of FiascOS, these interruptions are used when booting to load more code and to print status messages to the screen.
+
+\paragraph{}
+In the case of FiascOS, the memory is initialized according to the following memory map before leaving the bootsector for the kernel :
+
+\begin{figure}[H]
+    \centering
+    \begin{bytefield}{24}
+        \memsection{0000 7e00}{0000 7c00}{4}{Bootsector}\\
+        \memsection{0000 7bff}{0000 2200}{8}{Kernel}\\
+        \memsection{0000 21ff}{0000 2080}{2}{-- Free (Alignment) --}\\
+        \memsection{0000 207f}{0000 2050}{2}{IDT Descriptor}\\
+        \memsection{0000 204f}{0000 0000}{4}{IDT}\\
+    \end{bytefield}
+
+    \caption{RAM layout when jumping into the kernel}
+    
+\end{figure}
+
+\newpage
+\section{Building the image file}
+\subsection{Build process}
+\paragraph{}
+For the kernel, no relocatable code is used. All pieces of code are written to be loaded at a specific address in RAM. Everything is assembled using NASM to a binary file directly. An include file is included in each .asm code file, so that function addresses can be used in the whole project.
+
+\paragraph{}
+In order for each file to be assembled for the correct address, the \textbf{[org 0xXXXX]} directive is used in every piece of non-relocatable code. This indicates to NASM that the code is supposed to be loaded at address \textbf{0xXXXX}, and so all memory references need to be adjusted to take this offset into account.
+
+\paragraph{}
+A makefile is used for the build process for convenience. It assembles every file to a binary or elf file as required, and creates the final .bin image using a linker. A linker file is used to store each section of code and data at the right address in the file, so that when the OS tries to load some code, it knows where it is on the disk.
+
+\subsection{layout of the file}
+\paragraph{}
+The layout of the image file is controlled by the \textbf{linker.ld} file located in the \textbf{Build} directory.\\
+The final image file can be decomposed this way :
+
+\begin{figure}[H]
+    \centering
+    \begin{bytefield}{24}
+        \memsection{0000 ffff}{0000 2000}{3}{64-bit Kernel}\\
+        \memsection{0000 1fff}{0000 0200}{3}{32-bit Kernel}\\
+        \memsection{0000 01ff}{0000 0000}{3}{Bootsector}\\
+    \end{bytefield}
+
+    \caption{Boot disk layout}
+    
+\end{figure}
+
+\newpage
+\section{Functions definition and usage}
+\paragraph{}
+This section will hold data about the various functions and interrupts that are used in FiascOS.
+
+\subsection{16 bit functions}
+
+\subsubsection{disk\_load\_16\_bits}
+\paragraph{}
+This function is available in the bootsector to load data from the disk to memory using BIOS interrupt 13h. It always reads from Head 0.
+
+\paragraph{}
+\textbf{\underline{Parameters}} :
+\begin{center}
+\begin{tabularx}{0.9\textwidth}{ |c|Y|c| }
+    \hline
+    register & description & range \\
+    \hline
+    \hline
+    ah & operation code & 0x02 \\
+    \hline
+    dh & number of sectors to read & 0x01 - 0x80 \\ 
+    \hline
+    dl & disk number & 0x00 - 0xff \\
+    \hline
+    ch & cylinder number & 0x000 - 0x3ff \\
+    \hline
+    cl & number of the first sector to read & 0x01 - 0x11 \\ 
+    \hline
+    es:bx & address in RAM to load at & 0x000 0000 - 0x100 feff \\
+    \hline
+\end{tabularx}
+\end{center}
+
+\paragraph{}
+When starting, the BIOS loads the drive number it booted from in dl. This useful when trying to load more code from the boot disk.
+
+\paragraph{}
+The ch and cl parameters may be a bit confusing because the ch parameter can contain values above \textbf{0xFF}, that the ch register cannot hold. In reality the cx register contains the cylinder on the 10 most significant bytes and the sector on the 6 least significant bytes.
+
+\begin{center}
+\begin{tabularx}{0.9\textwidth}{ |Y|c|c|c|c|c|c|c|c||c|c|c|c|c|c|c|c| }
+    \multicolumn{1}{c}{} & \multicolumn{8}{c}{$\scriptstyle ch$}& \multicolumn{8}{c}{$\scriptstyle cl$}\\
+    \multicolumn{1}{c}{} & \multicolumn{8}{c}{\downbracefill}& \multicolumn{8}{c}{\downbracefill}\\
+    \hline
+    cx register & F & E & D & C & B & A & 9 & 8 & 7 & 6 & 5 & 4 & 3 & 2 & 1 & 0 \\
+    \hline
+    \multicolumn{1}{c}{} & \multicolumn{10}{c}{\upbracefill}& \multicolumn{6}{c}{\upbracefill}\\[-1ex]
+    \multicolumn{1}{c}{} & \multicolumn{10}{c}{$\scriptstyle cylinder$}& \multicolumn{6}{c}{$\scriptstyle sector$}\\
+\end{tabularx}
+\end{center}
+
+\paragraph{}
+In case of an error where we couldn't read expected number of sectors, an error message is printed to the screen, and the function enters an infinite loop. In case of a more generic error (indicated by the carry flag being set after calling the interrupt), a generic disk error message is displayed before entering the infinite loop.
+
+\paragraph{}
+\textbf{\underline{Returns}} :
+\begin{center}
+\begin{tabularx}{0.9\textwidth}{ |c|Y|c| }
+    \hline
+    register or address & description & range \\
+    \hline
+    \hline
+    carry flag & error flag & 0b0 - 0b1 \\
+    \hline
+    ah & return code & 0x00 - 0xff \\
+    \hline
+    al & number of sectors actually read & 0x00 - 0x80 \\
+    \hline
+\end{tabularx}
+\end{center}
+
+\paragraph{}
+\textbf{\underline{Return codes}} :
+\begin{center}
+\begin{tabularx}{0.9\textwidth}{ |c|X| }
+    \hline
+    code & meaning \\
+    \hline
+    \hline
+    0x00 & no error \\
+    \hline
+    0x01 & invalid request \\
+    \hline
+    0x02 & bad address mark \\
+    \hline
+    0x04 & sector ID bad or not found \\
+    \hline
+    0x05 & reset failed \\
+    \hline
+    0x08 & DMA failure \\
+    \hline
+    0x09 & DMA overrun: attempted to write across a 64K-byte boundary \\
+    \hline
+    0x0A & bad sector flag detected \\
+    \hline
+    0x0B & bad cylinder flag detected \\
+    \hline
+    0x20 & controller failure \\
+    \hline
+    0x80 & timeout \\
+    \hline
+    0xaa & drive not ready \\
+    \hline
+    0xbb & undefined error \\
+    \hline
+\end{tabularx}
+\end{center}
+
+\newpage
+\subsection{32 bit functions}
+
+\subsubsection{vga\_print}
+\paragraph{}
+The function is available in the 32-bit kernel to print text to the screen is VGA text mode.
+
+
+\textbf{\underline{Parameters}} :
+\begin{center}
+\begin{tabularx}{0.9\textwidth}{ |c|Y|c| }
+    \hline
+    register & description & range \\
+    \hline
+    \hline
+    ebx & address of string to print & 0x0000 0000 - 0xffff ffff \\
+    \hline
+    al & Line number to print on & 0x00 - 0xff \\ 
+    \hline
+    ch & Color to print the text & 0x00 - 0xff \\
+    \hline
+    cl & Column number to print the text on & 0x00 - 0x4f \\
+    \hline
+\end{tabularx}
+\captionof{table}{vga\_print inputs}
+\label{table:vga_print_inputs}
+\end{center}
+
+\paragraph{}
+The function prints text strings. The address of the string to print needs to be stored in the \textbf{ebx}
+ register, and be null-terminated.
+
+\paragraph{}
+The \textbf{al} and \textbf{cl} registers can be used to control the position of the text on the screen.
+\begin{itemize}
+    \item \textbf{al} can take values from \textbf{0x00} to \textbf{0xff}. Values above 24 (\textbf{0x18}) will cause the terminal to be scrolled and the text on higher lines to be erased.
+    \item \textbf{cl} can take values from \textbf{0x00} to \textbf{0x4f}, allowing for 80 characters per line. When this limit is exceeded (either \textbf{cl} started with a value greater than \textbf{0x4f} or the string was long enough to go past the end of the screen), text will be wrapped around on the line below.
+\end{itemize}
+
+\paragraph{}
+The function can only modify memory in the range of \textbf{0xb8000} to \textbf{0xb8fa0}. Write attempts to memory regions outside of this range will cause the function to exit.
+
+\paragraph{}
+\textbf{ch} can be used to set the color of the text. Only a single value can be used, swapping colors during the printing of the text is not supported. IT uses the standard IBM 16 color scheme, with the high-order nibble controlling the background and the lower-order nibble controlling the text color.
+
+\newpage
+\paragraph{}
+The following table summarizes the available colors in this mode:
+
+\begin{center}
+\begin{tabularx}{0.9\textwidth}{ |Y|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c| }
+    \hline
+    ch register 
+    & \cellcolor[RGB]{255, 255, 255}f 
+    & \cellcolor[RGB]{0, 255, 255}\textcolor{black}{e}
+    & \cellcolor[RGB]{255, 0, 255}\textcolor{black}{d}
+    & \cellcolor[RGB]{0, 0, 255}\textcolor{white}{c}
+    & \cellcolor[RGB]{255, 255, 0}\textcolor{black}{b}
+    & \cellcolor[RGB]{0, 255, 0}\textcolor{black}{a}
+    & \cellcolor[RGB]{255, 0, 0}\textcolor{black}{9}
+    & \cellcolor[RGB]{128, 128, 128}\textcolor{white}{8}
+    & \cellcolor[RGB]{192, 192, 192}\textcolor{white}{7}
+    & \cellcolor[RGB]{0, 128, 128}\textcolor{white}{6}
+    & \cellcolor[RGB]{128, 0, 128}\textcolor{white}{5}
+    & \cellcolor[RGB]{0, 0, 128}\textcolor{white}{4}
+    & \cellcolor[RGB]{128, 128, 0}\textcolor{white}{3}
+    & \cellcolor[RGB]{0, 128, 0}\textcolor{white}{2} 
+    & \cellcolor[RGB]{128, 0, 0}\textcolor{white}{1} 
+    & \cellcolor[RGB]{0, 0, 0}\textcolor{white}{0} \\
+    \hline
+\end{tabularx}
+\captionof{table}{Available colors in VGA text mode}
+\label{table:VGA_colors}
+\end{center}
+
+\paragraph{}
+\textbf{\underline{Returns}} :
+\begin{center}
+\begin{tabularx}{0.5\textwidth}{ |Y| }
+    \hline
+    This function does not return any value \\
+    \hline
+\end{tabularx}
+\end{center}
+
+\newpage
+\section{Descriptor Tables layout}
+\subsection{The GDT (Global Descriptor Table)}
+\paragraph{}
+The GDT is a memory area containing information about the different memory segments defined by the OS.
+
+\paragraph{}
+The GDT is described by a GDT Descriptor structure, that has the following layout for 32-bit mode:
+
+\begin{center}
+\begin{mdframed}[innertopmargin=0, innerbottommargin=0, innerleftmargin=0, innerrightmargin=0, linewidth=0.5pt]
+\begin{bytefield}[bitwidth={\textwidth/48}]{48}
+	\colorbitheader[endianness=big, bitformatting={\tiny\rotatebox[origin=B]{0}}]{palette1_grey}{0,15,16,47}\\
+	\colorbitbox{palette1_lightgrey}{32}{Offset (32 bits)}
+    \colorbitbox{palette1_lightgrey}{16}{Size (16 bits)}
+\end{bytefield}
+\end{mdframed}
+\end{center}
+
+\paragraph{}
+And the following layout when in 64-bit mode :
+
+\begin{center}
+\begin{mdframed}[innertopmargin=0, innerbottommargin=0, innerleftmargin=0, innerrightmargin=0, linewidth=0.5pt]
+\begin{bytefield}[bitwidth={\textwidth/80}]{80}
+	\colorbitheader[endianness=big, bitformatting={\tiny\rotatebox[origin=B]{0}}]{palette1_grey}{0,15,79}\\
+	\colorbitbox{palette1_lightgrey}{64}{Offset (64 bits)}
+    \colorbitbox{palette1_lightgrey}{16}{Size (16 bits)}
+\end{bytefield}
+\end{mdframed}
+\end{center}
+
+\paragraph{}
+\textbf{Size} is equal to the size in bytes of the GDT - 1. This -1 is present because the GDT can have a size of 65536 bytes (8192 entries), but a 16-bit integer can only hold values up to 65535. This poses no problem since the GDT cannot have a size of 0 bytes.
+
+\paragraph{}
+\textbf{Offset} is equal to the linear address of the GDT (not the physical address, paging applies).
+
+\paragraph{}
+For the GDT to be used by the CPU, the GDTR register needs to point to the GDT Descriptor. The value of the GDTR register can be updated using the LGDT instruction :
+
+\begin{minted}{asm}
+LGDT Address_of_GDT_Descriptor
+\end{minted}
+
+\paragraph{}
+A GDT is mandatory in protected and long modes, but not necessary in real mode.
+
+\paragraph{}
+An entry in the GDT is called a segment descriptor. Entry 0 is not a valid entry, and cannot be used to describe a segment. An entry 8 bytes long and has the following layout in 32-bit mode :
+
+\begin{center}
+\begin{mdframed}[innertopmargin=0, innerbottommargin=0, innerleftmargin=0, innerrightmargin=0, linewidth=0.5pt]
+\begin{bytefield}[bitwidth={\textwidth/32}, bitheight={40pt}]{32}
+	\colorbitheader[endianness=big, bitformatting={\tiny\rotatebox[origin=B]{0}}, lsb=32]{palette1_grey}{32,39,40,47,48,51,52,55,56,63}\\
+    \colorbitbox{palette1_blue}{8}{Base (31-24)}
+    \colorbitbox{palette1_green}{4}{Flags}
+    \colorbitbox{palette1_lightgreen}{4}{Limit (19-16)}
+	\colorbitbox{palette1_orange}{8}{Access byte}
+    \colorbitbox{palette1_blue}{8}{Base (23-16)}\\
+    \colorbitheader[endianness=big, bitformatting={\tiny\rotatebox[origin=B]{0}}]{palette1_grey}{0,15,16,31}\\
+	\colorbitbox{palette1_blue}{16}{Base (15-0)}
+    \colorbitbox{palette1_lightgreen}{16}{Limit (15-0)}
+    
+\end{bytefield}
+\end{mdframed}
+\end{center}
+
+\paragraph{}
+In 64-bit long mode, a single segment descriptor takes the space of two GDT entries, to make sure that it can hold a 64-bit base address. This is their layout :
+
+\begin{center}
+\begin{mdframed}[innertopmargin=0, innerbottommargin=0, innerleftmargin=0, innerrightmargin=0, linewidth=0.5pt]
+\begin{bytefield}[bitwidth={\textwidth/32}, bitheight={40pt}]{32}
+    \colorbitheader[endianness=big, bitformatting={\tiny\rotatebox[origin=B]{0}}, lsb=96]{palette1_grey}{96,127}\\
+	\colorbitbox{palette1_red}{32}{Reserved}\\
+    \colorbitheader[endianness=big, bitformatting={\tiny\rotatebox[origin=B]{0}}, lsb=64]{palette1_grey}{64,95}\\
+	\colorbitbox{palette1_blue}{32}{Base (63-32)}\\
+	\colorbitheader[endianness=big, bitformatting={\tiny\rotatebox[origin=B]{0}}, lsb=32]{palette1_grey}{32,39,40,47,48,51,52,55,56,63}\\
+    \colorbitbox{palette1_blue}{8}{Base (31-24)}
+    \colorbitbox{palette1_green}{4}{Flags}
+    \colorbitbox{palette1_lightgreen}{4}{Limit (19-16)}
+	\colorbitbox{palette1_orange}{8}{Access byte}
+    \colorbitbox{palette1_blue}{8}{Base (23-16)}\\
+    \colorbitheader[endianness=big, bitformatting={\tiny\rotatebox[origin=B]{0}}]{palette1_grey}{0,15,16,31}\\
+	\colorbitbox{palette1_blue}{16}{Base (15-0)}
+    \colorbitbox{palette1_lightgreen}{16}{Limit (15-0)}
+    
+\end{bytefield}
+\end{mdframed}
+\end{center}
+
+%-----Bibliography
+\newpage
+\section{Bibliography}
+\begin{thebibliography}{8}
+
+    \bibitem{logo_attribution}
+    Base image for the logo : \url{https://www.flaticon.com/free-icons/not-found}
+
+    \bibitem{cfenollosa}
+    Useful tutorial to get started on OS development : \url{https://github.com/cfenollosa/os-tutorial}
+
+    \bibitem{OsDev wiki}
+    Lots and lots of resources about OS development on this website : \url{https://wiki.osdev.org/}
+    
+\end{thebibliography}
+
+\end{document}
