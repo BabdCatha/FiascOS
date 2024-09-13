@@ -24,7 +24,7 @@ os-image.bin: os-image.elf
 	i686-elf-objcopy -O binary $< $@
 
 run: os-image.bin
-	qemu-system-x86_64 -drive format=raw,file=$<,media=disk,index=0 -d int
+	qemu-system-x86_64 -drive format=raw,file=$<,id=disk,if=none -device piix3-ide,id=ide -device ide-hd,drive=disk,bus=ide.0
 	
 vmdk: os-image.bin
 	qemu-img convert -O vmdk $< fiascOS.vmdk

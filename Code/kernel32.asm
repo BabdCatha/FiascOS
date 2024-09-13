@@ -126,7 +126,7 @@ extended_function_available:
 
 long_mode_available:
 
-	call enumerate_PCI_devices
+	call enumerate_PCI_devices_and_initialize_32bit_drivers
 
 	;; paging was not enabled in protected mode, so it does not need to be disabled
 	;; 4 PAE paging tables will be set up at address 0x1000
@@ -1217,10 +1217,11 @@ scancodes_translations:
 error_processing_area:
 times 256 db 0x00
 
-PCI_DEVICE_IDENTIFIED db "PCI DEVICE IDENTIFIED: 0x", 0, 0, 0, 0, 0, 0, 0, 0, 0
+IDE_CONTROLLER_DETECTED db "IDE Controller", 0
+PCI_DEVICE_IDENTIFIED db "PCI DEVICE IDENTIFIED: 0x", 0
 PCI_VECTOR db 0xDE, 0xAD, 0xBE, 0xEF
 
-enumerate_PCI_devices:
+enumerate_PCI_devices_and_initialize_32bit_drivers:
 	pusha
 
 	call vga_clear_screen
@@ -1242,7 +1243,7 @@ enumerate_PCI_devices:
 		;; Checking if the device responded
 		cmp ax, 0xffff
 
-		je enumerate_PCI_devices.device_not_valid
+		je enumerate_PCI_devices_and_initialize_32bit_drivers.device_not_valid
 
 		;; Device is valid, printing it
 		push cx
@@ -1258,11 +1259,10 @@ enumerate_PCI_devices:
 
 		pop eax
 
-		xchg ah, al 	;; Endianness magic
+		xchg ah, al 	;; Endianness magic for pretty display
 		ror eax, 0x10
 		xchg ah, al
 		ror eax, 0x10
-
 
 		mov dword [PCI_VECTOR], eax
 
@@ -1274,18 +1274,78 @@ enumerate_PCI_devices:
 
 		call vga_print_hex
 
-		inc dl
+		;; Checking if the device is a bridge
+		;; This si done by reading the header type field contained in register 0x03
+		;; (offset 0x0c)
 
-		;pop eax
 		pop cx
 
-		;;TODO: print value of EAX
+		;; We keep the device information from the one we currently just enumerated
+		mov ah, 0x00
+		mov al, cl
+		mov bh, 0x00 
+		mov bl, 0x0c 		;; offset 0x0c allows reading of register 0x03
+
+		call PCI_read_word
+
+		;; eax now contains:
+		;; BIST | Header type | Latency Timer | Cache Line Size
+		;; We now check if the Header type is 0
+
+		and eax, 0x00FF0000
+		jnz enumerate_PCI_devices_and_initialize_32bit_drivers.bridge_device
+
+		;; Here, we know that header type is 0x00
+		;; Checking if the device is a known device
+		;; This is done by reading the class code and subclass fields of
+		;; register 0x02 (offset 0x08)
+
+		;; We keep the device information from the one we currently just enumerated
+		mov ah, 0x00
+		mov al, cl
+		mov bh, 0x00 
+		mov bl, 0x08 		;; offset 0x08 allows reading of register 0x02
+
+		call PCI_read_word
+
+		push cx
+
+		;; eax now contains the following information
+		;; Class code | Subclass | Prog IF | Rev. ID
+
+		;; We are interested in devices with :
+		;; Class code 0x01 (Mass Storage Controller)
+		;; Subclass 0x01 (IDE Controller)
+
+		ror eax, 0x10 		;; Moving the Class code and subclass bytes to ax
+		cmp ax, 0x0101
+		jnz enumerate_PCI_devices_and_initialize_32bit_drivers.device_not_IDE_controller
+
+		;; If both class and subclass codes are correct, we print a message
+
+		mov ebx, IDE_CONTROLLER_DETECTED
+	
+		mov ch, 0x0f	;; white on black
+		mov al, dl
+		mov cl, 0x22
+	
+		call vga_print
+
+		pop cx
+
+	.device_not_IDE_controller:
+
+		;; TODO: Check for more device types ?
+
+	.bridge_device:
+
+		inc dl 	;; Moving on to the text line on the terminal
 
 	.device_not_valid:
 
 		dec cx
 
-		jnz enumerate_PCI_devices.enumerate_loop_begin
+		jnz enumerate_PCI_devices_and_initialize_32bit_drivers.enumerate_loop_begin
 
 	.enumerate_loop_end:
 
