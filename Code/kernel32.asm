@@ -5,7 +5,107 @@ section .kernel32
 	;; The interrupt code should be loaded at address 0x9000
 KERNEL_START equ _start - 0x9000 ;to convert relocatables to absolute adresses
 
+;;----------Multiboot header setup------------
+
+section .multiboot
+;; Declare constants for the multiboot header.
+ALIGNP 		equ     1<<0          	     	;; align loaded modules on page boundaries
+MEMINFO 	equ     1<<1          		    ;; provide memory map
+SETVIDEO	equ	    1<<2 					;; provide video setting
+FLAGS   	equ     ALIGNP | MEMINFO | SETVIDEO  		;; this is the Multiboot 'flag' field
+MAGIC		equ     0x1BADB002     			;; 'magic number' lets bootloader find the header
+CHECKSUM 	equ     -(MAGIC + FLAGS) 		;; checksum of above, to prove we are multiboot
+
+MODE 		equ		0
+WIDTH		equ		1024
+HEIGHT		equ		768
+DEPTH 		equ		32
+
+;;----------Start of actual instructions----------
+
+global _start
 _start:
+
+	jmp check_grub	;; Jumping over the multiboot header
+	nop 			;; Two nop instructions for alignment
+	nop
+
+;;Multiboot header
+dd MAGIC
+dd FLAGS
+dd CHECKSUM
+dd 0
+dd 0
+dd 0
+dd 0
+dd 0
+dd MODE
+dd WIDTH
+dd HEIGHT
+dd DEPTH
+
+;;Here, we check if we came from GRUB or our own bootloader
+;;If we come from GRUB, we need to reset the GDT and the stack
+check_grub:
+	cmp eax, 0x2badb002		;;If these magic bytes are stored in eax, we came from GRUB
+	jne idt_setup			;;If we didn't come from GRUB, we can skip the reset
+
+	mov ecx, 0xfd000000				;;Printing a red pixel as a test
+	mov dword [ecx], 0x00FF0000
+
+
+;;----------Resetting the GDT----------
+;; Resetting the GDT in case we came here from GRUB
+gdt_setup:
+	cli
+	lgdt [gdt_descriptor]
+
+	mov ax, DATA_SEG 	;we update the segment registers
+	mov ds, ax
+	mov ss, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+
+	mov ebp, 0x90000 	;we move the stack base pointer to the top of the free space
+	mov esp, ebp 		;the stack is currently empty
+
+	jmp CODE_SEG:idt_setup
+
+gdt_start:
+	;; the GDT always starts with a NULL entry
+	dd 0x0
+	dd 0x0
+
+	;; GDT for code segment, base = 0x00000000, length = 0xfffff
+gdt_code:	
+	dw 0xffff 		;segment length (bits 0-15)
+	dw 0x0000 		;segment base (bits 0-15)
+	db 0x00 		;segment base (bits 16-23)
+	db 10011010b 	;flags (8bits)
+	db 11001111b 	;flags (4bits) + segment length (bits 16-19)
+	db 0x00 		;segment base (bits 24-31)
+
+	;;GDT for data segment, base = 0x00000000, length = 0xfffff
+gdt_data:
+	dw 0xffff 		;segment length (bits 0-15)
+	dw 0x0000 		;segment base (bits 0-15)
+	db 0x00 		;segment base (bits 16-23)
+	db 10010010b 	;flags (8bits)
+	db 11001111b 	;flags (4bits) + segment length (bits 16-19)
+	db 0x00 		;segment base (bits 24-31)	dw 0xffff
+
+gdt_end: 			;used to calculate sizes
+
+	;; GDT descriptor
+gdt_descriptor:
+	dw gdt_end - gdt_start - 1	;size
+	dd gdt_start		 		;address
+
+	CODE_SEG equ gdt_code - gdt_start
+	DATA_SEG equ gdt_data - gdt_start
+
+;;----------Point of convergence between GRUB and our own bootloader
 
 idt_setup:
 
