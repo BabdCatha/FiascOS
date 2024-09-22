@@ -10,7 +10,7 @@ section .bootsector
 	;; loading code from the second sector of the disk
 	;; dl is set to the boot disk by the BIOS when booting, and hasn't been modified yet
 	mov ah, 0x02 		;setting a read operation
-	mov dh, 0x09 		;reading 3584 bytes (7 sectors)
+	mov dh, 0x0a 		;reading 3584 bytes (7 sectors)
 	mov cl, 0x02 		;the first sector after the boot sector
 	mov ch, 0x00 		;cylinder 0
 

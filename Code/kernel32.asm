@@ -1378,7 +1378,7 @@ enumerate_PCI_devices_and_initialize_32bit_drivers:
 		;; This si done by reading the header type field contained in register 0x03
 		;; (offset 0x0c)
 
-		pop cx
+		pop cx 				;; Restoring the original context
 
 		;; We keep the device information from the one we currently just enumerated
 		mov ah, 0x00
@@ -1408,7 +1408,8 @@ enumerate_PCI_devices_and_initialize_32bit_drivers:
 
 		call PCI_read_word
 
-		push cx
+		push cx 			;; Saving the context before calling the VGA_print function
+		push eax
 
 		;; eax now contains the following information
 		;; Class code | Subclass | Prog IF | Rev. ID
@@ -1431,7 +1432,39 @@ enumerate_PCI_devices_and_initialize_32bit_drivers:
 	
 		call vga_print
 
+		;;And we try to initialize the IDE driver
+		;;For this, we need the address of BAR0-4
+
+		pop eax 		;; restoring the context
 		pop cx
+
+		mov bl, 0x10 		;; offset 0x10 allows reading of register 0x04
+		;; It will be increased 4 times to read the 5 necessary BAR
+
+.read_IDE_BAR:
+		;; Reading BAR0-4
+		mov ah, 0x00
+		mov al, cl
+		mov bh, 0x00 
+
+		call PCI_read_word
+
+		push eax 						;; Pushing parameters to the stack
+
+		add bl, 0x04 					;; Increasing bl to read the next register
+
+		cmp bl, 0x24
+		jl enumerate_PCI_devices_and_initialize_32bit_drivers.read_IDE_BAR
+
+		call ide_driver.ide_init 		
+
+		;; Cleaning the stack
+		pop eax
+		pop eax
+		pop eax
+		pop eax
+		pop eax
+
 
 	.device_not_IDE_controller:
 
@@ -1508,4 +1541,21 @@ PCI_read_word:
 
 	pop edx
 	pop cx
+	ret
+
+
+
+;;----------To be moved to separate file------------
+ide_driver:
+.ide_init:
+
+	;; Retreiving the parameters
+	mov eax, [esp+0x04]
+	mov eax, [esp+0x08]
+	mov eax, [esp+0x0c]
+	mov eax, [esp+0x10]
+	mov eax, [esp+0x14]
+
+	jmp $
+
 	ret
