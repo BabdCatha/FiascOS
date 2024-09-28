@@ -1546,6 +1546,135 @@ PCI_read_word:
 
 
 ;;----------To be moved to separate file------------
+;; https://wiki.osdev.org/PCI_IDE_Controller
+;; Constants definition
+
+;; Status codes
+ATA_SR_BSY				equ		0x80 		;; Busy
+ATA_SR_DRDY				equ		0x40 		;; Drive Ready
+ATA_SR_DF 				equ		0x20 		;; Drive write fault
+ATA_SR_DSC				equ		0x10 		;; Drive seek complete
+ATA_SR_DRQ				equ		0x08 		;; Data request ready
+ATA_SR_CORR 			equ		0x04 		;; Corrected data
+ATA_SR_IDX				equ 	0x02 		;; Index
+ATA_SR_ERR				equ 	0x01 		;; Error
+
+;; Error codes
+ATA_ER_BBK     			equ		0x80 		;; Bad block
+ATA_ER_UNC      		equ 	0x40 		;; Uncorrectable data
+ATA_ER_MC       		equ 	0x20 		;; Media changed
+ATA_ER_IDNF    			equ 	0x10 		;; ID mark not found
+ATA_ER_MCR      		equ 	0x08 		;; Media change request
+ATA_ER_ABRT     		equ 	0x04		;; Command aborted
+ATA_ER_TK0NF    		equ 	0x02    	;; Track 0 not found
+ATA_ER_AMNF     		equ 	0x01 		;; No address mark
+
+;; Commands
+ATA_CMD_READ_PIO        equ 	0x20
+ATA_CMD_READ_PIO_EXT 	equ 	0x24
+ATA_CMD_READ_DMA 		equ 	0xc8
+ATA_CMD_READ_DMA_EXT 	equ 	0x25
+ATA_CMD_WRITE_PIO 		equ 	0x30
+ATA_CMD_WRITE_PIO_EXT 	equ 	0x34
+ATA_CMD_WRITE_DMA 		equ 	0xca
+ATA_CMD_WRITE_DMA_EXT 	equ 	0x35
+ATA_CMD_CACHE_FLUSH 	equ 	0xe7
+ATA_CMD_CACHE_FLUSH_EXT equ 	0xea
+ATA_CMD_PACKET 			equ 	0xa0
+ATA_CMD_IDENTIFY_PACKET equ 	0xa1
+ATA_CMD_IDENTIFY 		equ 	0xec
+
+ATAPI_CMD_READ 			equ 	0xa8
+ATAPI_CMD_EJECT 		equ 	0x1b
+
+;; Identification space
+ATA_IDENT_DEVICETYPE 	equ 	0
+ATA_IDENT_CYLINDERS 	equ 	2
+ATA_IDENT_HEADS 		equ 	6
+ATA_IDENT_SECTORS 		equ 	12
+ATA_IDENT_SERIAL 		equ 	20
+ATA_IDENT_MODEL 		equ 	54
+ATA_IDENT_CAPABILITIES 	equ 	98
+ATA_IDENT_FIELDVALID 	equ 	106
+ATA_IDENT_MAX_LBA 		equ 	120
+ATA_IDENT_COMMANDSETS 	equ 	164
+ATA_IDENT_MAX_LBA_EXT 	equ 	200
+
+;; Interface
+IDE_ATA 				equ 	0x00
+IDE_ATAPI 				equ 	0x01
+ATA_MASTER 				equ 	0x00
+ATA_SLAVE 				equ 	0x01
+
+;; Task File
+ATA_REG_DATA 			equ 	0x00
+ATA_REG_ERROR 			equ 	0x01
+ATA_REG_FEATURES 		equ 	0x01
+ATA_REG_SECCOUNT0 		equ 	0x02
+ATA_REG_LBA0 			equ 	0x03
+ATA_REG_LBA1 			equ 	0x04
+ATA_REG_LBA2 			equ 	0x05
+ATA_REG_HDDEVSEL 		equ 	0x06
+ATA_REG_COMMAND 		equ 	0x07
+ATA_REG_STATUS 			equ 	0x07
+ATA_REG_SECCOUNT1 		equ 	0x08
+ATA_REG_LBA3 			equ 	0x09
+ATA_REG_LBA4 			equ 	0x0a
+ATA_REG_LBA5 			equ 	0x0b
+ATA_REG_CONTROL 		equ 	0x0c
+ATA_REG_ALTSTATUS 		equ 	0x0c
+ATA_REG_DEVADDRESS 		equ 	0x0d
+
+;; Channels
+ATA_PRIMARY 			equ 	0x00
+ATA_SECONDARY 			equ 	0x01
+
+;; Directions
+ATA_READ 				equ 	0x00
+ATA_WRITE 				equ 	0x01
+
+;;-----------------------------------------------------------;;
+;; Structures
+
+;; Channel registers structure
+;; Size: 7 bytes
+struc IDEChannelRegister
+	base:	resw 1
+	ctrl: 	resw 1
+	bmide: 	resw 1
+	nIEN: 	resb 1
+endstruc
+
+;;-----------------------------------------------------------;;
+;; Memory regions
+ide_mem:
+
+.ide_buf times 2048 db 0
+.ide_irq_invoked db 0
+.atapi_packet db 0xa8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+.IDEChannelRegister0:
+	istruc IDEChannelRegister
+		at base, 	dw 0x0000
+		at ctrl, 	dw 0x0000
+		at bmide, 	dw 0x0000
+		at nIEN, 	db 0x00
+	iend
+
+
+.ide_device:
+.Reserved 		db 0x00 						;; Empty(0) or drive exists(1)
+.Channel 		db 0x00 						;; Primary channel(0) or secondary channel (1)
+.Drive 			db 0x00 						;; Master Drive (0) or Slave drive (1)
+.Type 			db 0x00, 0x00 					;; ATA(0) or ATAPI(1)
+.Signature 		db 0x00, 0x00 					;; Drive signature
+.Capabilities 	db 0x00, 0x00 					;; Supported features
+.CommandSets 	db 0x00, 0x00, 0x00, 0x00 		;; Command sets supported
+.Size 			db 0x00, 0x00, 0x00, 0x00 		;; Size in sectors
+.Model times 41 db 0x00 						;; Model as a string
+
+;;-----------------------------------------------------------;;
+;; Driver functions
 ide_driver:
 .ide_init:
 
@@ -1559,3 +1688,13 @@ ide_driver:
 	jmp $
 
 	ret
+
+.ide_write:
+	;; Function to write to PCI registers
+	;; Parameters:
+	;; ah - channel
+	;; al - register
+	;; bh - data
+	;; Returns:
+	;; None
+	
